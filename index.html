@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title> 役次元 · 积木编辑器 </title>
+<script>
+  /* 首屏防闪烁：在 CSS 之前确定实际主题 */
+  (function () {
+    var m = 'system';
+    try { var v = localStorage.getItem('gp-theme'); if (v === 'light' || v === 'dark' || v === 'system') m = v; } catch (e) {}
+    var eff = m === 'system'
+      ? ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light')
+      : m;
+    document.documentElement.setAttribute('data-theme', eff);
+    document.documentElement.setAttribute('data-theme-mode', m);
+  })();
+</script>
+<link rel="icon" type="image/jpeg" href="logo.jpg">
+<link rel="icon" type="image/png" href="logo-dark.png" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="logo.jpg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo-swap">
+      <img class="logo logo-light" src="logo.jpg" alt="役次元" width="30" height="30">
+      <img class="logo logo-dark" src="logo-dark.png" alt="" aria-hidden="true" width="30" height="30">
+    </span>
+    <span class="title">役次元 · 积木编辑器</span>
+  </div>
+  <div class="tools">
+    <span class="count">积木 <b id="blk-count">0</b></span>
+    <div id="theme-switch" class="theme-switch" role="group" aria-label="外观模式">
+      <button type="button" data-mode="system" title="跟随系统外观">🖥 <span>跟随系统</span></button>
+      <button type="button" data-mode="light" title="浅色外观">☀ <span>浅色</span></button>
+      <button type="button" data-mode="dark" title="深色外观">🌙 <span>深色</span></button>
+    </div>
+    <button id="btn-example" class="btn ghost" type="button">载入示例</button>
+    <label class="btn ghost file-btn" for="file-in">导入 JSON</label>
+    <input id="file-in" type="file" accept=".json,application/json" hidden>
+    <button id="btn-validate" class="btn ghost" type="button">校验</button>
+    <button id="btn-clear" class="btn ghost danger" type="button">清空</button>
+    <button id="btn-run" class="btn primary" type="button">生成 ▶</button>
+    <button id="btn-start" class="btn go" type="button">开始</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside id="palette" class="palette" aria-label="积木库"></aside>
+
+  <section class="canvas-wrap">
+    <div class="canvas-head">
+      <span>脚本画布</span>
+      <span class="hint">拖入积木 · 线性连接用上下顺排 · 条件/运算积木拖到虚线插槽</span>
+    </div>
+    <div id="canvas" class="canvas"></div>
+  </section>
+
+  <aside id="device-panel" class="device-panel" aria-label="连接状态">
+    <div class="device-head">
+      <span>连接状态</span>
+      <span id="device-badge" class="device-badge" data-state="disconnected">离线</span>
+    </div>
+
+    <div id="device-status" class="device-status" data-state="disconnected" role="status" aria-live="polite">
+      <span class="device-dot" aria-hidden="true"></span>
+      <span class="device-status-text">
+        <b id="device-status-title">未连接到设备</b>
+        <small id="device-status-sub">等待网关连接</small>
+      </span>
+    </div>
+
+    <div class="device-section">
+      <div class="device-section-title">设备列表</div>
+      <ul id="device-list" class="device-list">
+        <li class="device-empty">暂无设备</li>
+      </ul>
+    </div>
+
+    <div class="device-foot">
+      <button id="btn-device-refresh" class="btn ghost wide" type="button">刷新</button>
+    </div>
+  </aside>
+</main>
+
+<datalist id="var-list"></datalist>
+<div id="toast" class="toast"></div>
+
+<div id="overlay" class="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title"><span class="logo-swap sm"><img class="logo logo-light" src="logo.jpg" alt="役次元" width="22" height="22"><img class="logo logo-dark" src="logo-dark.png" alt="" aria-hidden="true" width="22" height="22"></span>输出 · 自定义逻辑 JSON</span>
+      <div class="modal-actions">
+        <button id="btn-copy" class="btn ghost" type="button">复制</button>
+        <button id="btn-download" class="btn ghost" type="button">下载 logic.json</button>
+        <button id="btn-close" class="btn primary" type="button">关闭</button>
+      </div>
+    </div>
+    <ul id="warnings" class="warnings"></ul>
+    <pre id="json-out" class="json-out"></pre>
+  </div>
+</div>
+
+<div id="save-overlay" class="overlay">
+  <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="save-title">
+    <div class="modal-head">
+      <span id="save-title" class="modal-title">保存程序</span>
+    </div>
+    <div class="modal-body">
+      <label class="field-label" for="save-name">文件名</label>
+      <div class="name-row">
+        <input id="save-name" class="name-input" type="text" autocomplete="off" spellcheck="false">
+        <span class="suffix">.json</span>
+      </div>
+      <p id="save-hint" class="field-hint"></p>
+    </div>
+    <div class="modal-foot">
+      <button id="btn-save-cancel" class="btn ghost" type="button">取消</button>
+      <button id="btn-save-ok" class="btn primary" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="start-overlay" class="overlay">
+  <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="start-title">
+    <div class="modal-head">
+      <span id="start-title" class="modal-title">开始</span>
+    </div>
+    <div class="modal-body">
+      <p id="start-notice" class="notice">
+        <span class="notice-dot" aria-hidden="true"></span>
+        <span id="start-notice-text">未连接到网关</span>
+      </p>
+      <p id="start-hint" class="field-hint">请先在右侧确认连接状态，连接后即可下发程序。</p>
+    </div>
+    <div class="modal-foot">
+      <button id="btn-start-close" class="btn primary" type="button">知道了</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/theme.js"></script>
+<script src="js/blocks.js"></script>
+<script src="js/examples.js"></script>
+<script src="js/device.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/workspace.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
