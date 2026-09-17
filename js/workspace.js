@@ -667,38 +667,138 @@
 
   function hatLimitReached() { return countHats() >= MAX_EVENT_BLOCKS; }
 
-  /* ---------- 面板 ---------- */
-  function renderPalette() {
-    paletteEl.innerHTML = '';
-    GP.CATS.forEach(function (cat) {
-      var defs = GP.defsByCat(cat.id);
+  /* ---------- 面板：四分页 ----------
+   * 事件 / 控制 / 设备 / 值·变量。41 个 opcode 全部可达，页内保留二级分组标题。
+   * 分页与校验、生成逻辑解耦：只影响面板渲染，不碰 state / toSpec / JSON。
+   */
+  var PAL_PAGES = [
+    {
+      id: 'event', name: '事件', cats: ['event'],
+      hint: '事件积木 1-2 个，各开一条执行链；拖到画布任意位置'
+    },
+    {
+      id: 'control', name: '控制', cats: ['control'],
+      hint: '等待、循环、条件分支与退出循环'
+    },
+    {
+      id: 'device', name: '设备', cats: ['device_lock', 'device_tens', 'device_enema', 'device_vibe_a', 'device_vibe_b'],
+      hint: '蓝牙外设指令：智能锁 / 电击器 / 灌肠机 / 跳蛋 / 榨精机'
+    },
+    {
+      id: 'value', name: '值/变量', cats: ['operator', 'value'],
+      hint: '变量、数学运算、比较判断、设备状态读取'
+    }
+  ];
+  var PAL_PAGE_KEY = 'gp-palette-page';
+
+  function storedPage() {
+    try {
+      var v = localStorage.getItem(PAL_PAGE_KEY);
+      for (var i = 0; i < PAL_PAGES.length; i++) { if (PAL_PAGES[i].id === v) return v; }
+    } catch (e) { /* localStorage 不可用：静默降级为默认页 */ }
+    return PAL_PAGES[0].id;
+  }
+
+  function savePage(id) {
+    try { localStorage.setItem(PAL_PAGE_KEY, id); } catch (e) { /* 静默降级 */ }
+  }
+
+  var currentPage = null;
+
+  function makePaletteBlock(def) {
+    var el = renderBlock(newBlock(def.op), null);
+    el.classList.add('palette-blk');
+    el.draggable = true;
+    el.title = def.op + ' — 拖到画布，或双击追加';
+    el.addEventListener('dragstart', function (e) {
+      if (GP.isHat(def.op) && hatLimitReached()) {
+        toast(EVENT_LIMIT_MSG);
+        e.preventDefault();
+        finishDrag();
+        return;
+      }
+      paletteDragStart(e, def.op);
+    });
+    el.addEventListener('dragend', finishDrag);
+    el.addEventListener('dblclick', function () { addToRoot(def.op); });
+    return el;
+  }
+
+  function renderPaletteTabs(tabsEl) {
+    tabsEl.innerHTML = '';
+    PAL_PAGES.forEach(function (page) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pal-tab' + (page.id === currentPage ? ' active' : '');
+      b.dataset.page = page.id;
+      b.setAttribute('aria-selected', page.id === currentPage ? 'true' : 'false');
+      b.textContent = page.name;
+      b.title = page.hint;
+      b.addEventListener('click', function () { switchPage(page.id); });
+      tabsEl.appendChild(b);
+    });
+  }
+
+  /* 每页独立容器：切换分页只切 hidden 类，积木始终可达（页面内独立滚动） */
+  function renderPalettePage(page) {
+    var bodyEl = document.createElement('div');
+    bodyEl.className = 'pal-body' + (page.id === currentPage ? '' : ' hidden');
+    bodyEl.dataset.page = page.id;
+    page.cats.forEach(function (catId) {
+      var defs = GP.defsByCat(catId);
       if (!defs.length) return;
       var group = document.createElement('div');
       group.className = 'pal-group';
       var h = document.createElement('div');
-      h.className = 'pal-title cat-' + cat.id;
-      h.textContent = cat.name;
+      h.className = 'pal-title cat-' + catId;
+      h.textContent = GP.CAT_MAP[catId] ? GP.CAT_MAP[catId].name : catId;
       group.appendChild(h);
-      defs.forEach(function (def) {
-        var el = renderBlock(newBlock(def.op), null);
-        el.classList.add('palette-blk');
-        el.draggable = true;
-        el.title = def.op + ' — 拖到画布，或双击追加';
-        el.addEventListener('dragstart', function (e) {
-          if (GP.isHat(def.op) && hatLimitReached()) {
-            toast(EVENT_LIMIT_MSG);
-            e.preventDefault();
-            finishDrag();
-            return;
-          }
-          paletteDragStart(e, def.op);
-        });
-        el.addEventListener('dragend', finishDrag);
-        el.addEventListener('dblclick', function () { addToRoot(def.op); });
-        group.appendChild(el);
-      });
-      paletteEl.appendChild(group);
+      defs.forEach(function (def) { group.appendChild(makePaletteBlock(def)); });
+      bodyEl.appendChild(group);
     });
+    /* 空页检测：不用 querySelector（DOM 桩未实现），直接数 .pal-group 子节点 */
+    var hasGroup = false;
+    Array.prototype.forEach.call(bodyEl.children, function (c) {
+      if (c._classes && c._classes.has('pal-group')) hasGroup = true;
+    });
+    if (!hasGroup) {
+      var empty = document.createElement('div');
+      empty.className = 'pal-empty';
+      empty.textContent = '此分页暂无积木';
+      bodyEl.appendChild(empty);
+    }
+    var hint = document.createElement('div');
+    hint.className = 'pal-hint';
+    hint.textContent = page.hint;
+    bodyEl.appendChild(hint);
+    return bodyEl;
+  }
+
+  function switchPage(id) {
+    if (id === currentPage) return; // 切换分页本身不触发任何删除/重建
+    currentPage = id;
+    savePage(id);
+    renderPaletteTabs(paletteTabsEl);
+    var kids = paletteBodyEl ? paletteBodyEl.children : [];
+    Array.prototype.forEach.call(kids, function (body) {
+      body.classList.toggle('hidden', body.dataset.page !== id);
+    });
+  }
+
+  var paletteTabsEl = null, paletteBodyEl = null;
+
+  function renderPalette() {
+    currentPage = storedPage();
+    paletteEl.innerHTML = '';
+    paletteTabsEl = document.createElement('div');
+    paletteTabsEl.className = 'pal-tabs';
+    paletteTabsEl.setAttribute('role', 'tablist');
+    paletteEl.appendChild(paletteTabsEl);
+    paletteBodyEl = document.createElement('div');
+    paletteBodyEl.className = 'pal-pages';
+    paletteEl.appendChild(paletteBodyEl);
+    renderPaletteTabs(paletteTabsEl);
+    PAL_PAGES.forEach(function (p) { paletteBodyEl.appendChild(renderPalettePage(p)); });
   }
 
   function addToRoot(op) {

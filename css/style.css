@@ -254,11 +254,74 @@ html[data-theme="dark"] .logo-swap .logo-dark { display: block; }
 .palette {
   width: 320px;
   min-width: 320px;
-  overflow-y: auto;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
   border-right: 1px solid var(--line);
   background: var(--bg-2);
   transition: background .2s ease;
+}
+
+/* ---------- 分页标签 ---------- */
+.pal-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.pal-tab {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.pal-tab:hover { background: rgba(255, 159, 67, .12); color: var(--text); }
+.pal-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.pal-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- 页容器：每页独立滚动 ---------- */
+.pal-pages { flex: 1; min-height: 0; position: relative; }
+.pal-body {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+.pal-body.hidden { display: none; }
+.pal-empty {
+  color: var(--hint);
+  font-size: 13px;
+  padding: 24px 0;
+  text-align: center;
+}
+.pal-hint {
+  color: var(--hint);
+  font-size: 11px;
+  padding: 10px 8px 4px;
+  border-top: 1px dashed var(--line);
+  margin-top: 6px;
+}
+
+/* 小屏：面板可折叠，不挤压画布 */
+@media (max-width: 760px) {
+  .layout { flex-direction: column; }
+  .palette { width: 100%; min-width: 0; max-height: 45%; border-right: none; border-bottom: 1px solid var(--line); }
+  .canvas-wrap { flex: 1; min-height: 0; }
 }
 
 .canvas-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
