@@ -61,6 +61,18 @@ checkMath('随机区间相等（A=B）：通过', 'op_random', { A: 5, B: 5 }, [
 checkMath('随机区间正常：通过', 'op_random', { A: 0, B: 100 }, []);
 checkMath('随机区间为嵌套积木：不判（运行期才知道），通过', 'op_random', { A: 0, B: b('val_time', 'blk_3', { UNIT: '秒' }) }, []);
 
+/* 字符串值（UI 输入框真实形态 ni.value）：必须同样拦截，否则 UI 上依旧能通过 */
+checkMath('字符串除数 "0"：math_div_zero', 'op_div', { A: '1', B: '0' }, ['math_div_zero']);
+checkMath('字符串 ln(0)：math_log_domain', 'op_math', { A: '0', FN: 'ln' }, ['math_log_domain']);
+checkMath('字符串 log(-1)：math_log_domain', 'op_math', { A: '-1', FN: 'log' }, ['math_log_domain']);
+checkMath('字符串 tan(90)：math_tan_domain', 'op_math', { A: '90', FN: 'tan' }, ['math_tan_domain']);
+checkMath('字符串 asin(2)：math_asin_domain', 'op_math', { A: '2', FN: 'asin' }, ['math_asin_domain']);
+checkMath('字符串 random 10>0：math_random_range', 'op_random', { A: '10', B: '0' }, ['math_random_range']);
+checkMath('字符串除数 "2"：通过', 'op_div', { A: '1', B: '2' }, []);
+checkMath('字符串 tan(45)：通过', 'op_math', { A: '45', FN: 'tan' }, []);
+checkMath('字符串 random 0-100：通过', 'op_random', { A: '0', B: '100' }, []);
+checkMath('非法字符串（NaN）：不判不误报，通过', 'op_div', { A: '1', B: 'abc' }, []);
+
 /* 二. 拖入左侧删除：数据层验证（children 数组随父块一并移除） */
 const ws2 = { root: [
   b('when_start', 'blk_1', { FLAG: true }),

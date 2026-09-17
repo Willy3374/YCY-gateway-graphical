@@ -144,16 +144,25 @@
     function err(code, msg) { errors.push({ code: code, msg: msg }); }
     function isBlockVal(v) { return !!v && typeof v === 'object' && typeof v.op === 'string'; }
 
-    /* h. 数学合理性：只检查字面量参数（嵌套积木的值运行期才知道，不在此判） */
+    /* h. 数学合理性：只检查字面量参数（嵌套积木的值运行期才知道，不在此判）。
+     * UI 输入框的值是字符串（ni.value），需先转数字再判，否则绕过校验。 */
+    function toNum(v) {
+      if (typeof v === 'number') return isFinite(v) ? v : null;
+      if (typeof v === 'string' && v.trim() !== '') {
+        var n = Number(v);
+        return isNaN(n) ? null : n;
+      }
+      return null;
+    }
     function checkMath(op, fields, uid) {
-      var A = fields.A, B = fields.B;
-      if (op === 'op_div' && typeof B === 'number' && B === 0) {
+      var A = toNum(fields.A), B = toNum(fields.B);
+      if (op === 'op_div' && B === 0) {
         err('math_div_zero', '除法积木 ' + uid + '（op_div）的除数为 0，请修改除数');
       }
-      if (op === 'op_random' && typeof A === 'number' && typeof B === 'number' && A > B) {
+      if (op === 'op_random' && A !== null && B !== null && A > B) {
         err('math_random_range', '运算积木 ' + uid + '（op_random）：随机区间为空（下限 ' + A + ' 大于上限 ' + B + '），请交换或修改');
       }
-      if (op !== 'op_math' || typeof A !== 'number') return;
+      if (op !== 'op_math' || A === null) return;
       var fn = fields.FN;
       if ((fn === 'ln' || fn === 'log') && A <= 0) {
         err('math_log_domain', '运算积木 ' + uid + '（op_math）：' + fn + '(' + A + ') 超出定义域，要求参数 > 0');
