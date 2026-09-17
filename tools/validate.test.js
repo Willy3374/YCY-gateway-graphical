@@ -56,6 +56,10 @@ checkMath('acos(-1.5)：math_asin_domain', 'op_math', { A: -1.5, FN: 'acos' }, [
 checkMath('tan(90)：math_tan_domain', 'op_math', { A: 90, FN: 'tan' }, ['math_tan_domain']);
 checkMath('tan(270)：math_tan_domain', 'op_math', { A: 270, FN: 'tan' }, ['math_tan_domain']);
 checkMath('tan(45)：通过', 'op_math', { A: 45, FN: 'tan' }, []);
+checkMath('随机区间为空（下限>上限）：math_random_range', 'op_random', { A: 10, B: 0 }, ['math_random_range']);
+checkMath('随机区间相等（A=B）：通过', 'op_random', { A: 5, B: 5 }, []);
+checkMath('随机区间正常：通过', 'op_random', { A: 0, B: 100 }, []);
+checkMath('随机区间为嵌套积木：不判（运行期才知道），通过', 'op_random', { A: 0, B: b('val_time', 'blk_3', { UNIT: '秒' }) }, []);
 
 /* 二. 拖入左侧删除：数据层验证（children 数组随父块一并移除） */
 const ws2 = { root: [

@@ -150,6 +150,9 @@
       if (op === 'op_div' && typeof B === 'number' && B === 0) {
         err('math_div_zero', '除法积木 ' + uid + '（op_div）的除数为 0，请修改除数');
       }
+      if (op === 'op_random' && typeof A === 'number' && typeof B === 'number' && A > B) {
+        err('math_random_range', '运算积木 ' + uid + '（op_random）：随机区间为空（下限 ' + A + ' 大于上限 ' + B + '），请交换或修改');
+      }
       if (op !== 'op_math' || typeof A !== 'number') return;
       var fn = fields.FN;
       if ((fn === 'ln' || fn === 'log') && A <= 0) {
