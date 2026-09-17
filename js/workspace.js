@@ -760,17 +760,6 @@
       defs.forEach(function (def) { group.appendChild(makePaletteBlock(def)); });
       bodyEl.appendChild(group);
     });
-    /* 空页检测：不用 querySelector（DOM 桩未实现），直接数 .pal-group 子节点 */
-    var hasGroup = false;
-    Array.prototype.forEach.call(bodyEl.children, function (c) {
-      if (c._classes && c._classes.has('pal-group')) hasGroup = true;
-    });
-    if (!hasGroup) {
-      var empty = document.createElement('div');
-      empty.className = 'pal-empty';
-      empty.textContent = '此分页暂无积木';
-      bodyEl.appendChild(empty);
-    }
     var hint = document.createElement('div');
     hint.className = 'pal-hint';
     hint.textContent = page.hint;

@@ -303,12 +303,6 @@ html[data-theme="dark"] .logo-swap .logo-dark { display: block; }
   padding: 12px;
 }
 .pal-body.hidden { display: none; }
-.pal-empty {
-  color: var(--hint);
-  font-size: 13px;
-  padding: 24px 0;
-  text-align: center;
-}
 .pal-hint {
   color: var(--hint);
   font-size: 11px;
