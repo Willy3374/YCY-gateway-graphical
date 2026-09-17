@@ -40,7 +40,7 @@ RK3308H 网关（Linux + 板载 C 解释器）
 | `css/style.css` | 全部样式，CSS 变量驱动主题（深色为 `:root` 默认，浅色走 `[data-theme="light"]`） |
 | `js/blocks.js` | **积木库唯一数据源**：41 个 opcode 的分类、参数定义、槽位兼容规则 |
 | `js/engine.js` | 编译引擎 `GP.toSpec`：画布状态 → 逻辑 JSON，并收集告警 |
-| `js/workspace.js` | 画布状态机、渲染、拖拽命中判定、导入导出、积木库四分页（事件/控制/设备/值·变量，`localStorage` 记忆） |
+| `js/workspace.js` | 画布状态机、渲染、拖拽命中判定、导入导出、积木库五分页（事件/控制/设备/运算/值·变量，`localStorage` 记忆） |
 | `js/examples.js` | 内置示例工程「电击器脉冲」 |
 | `js/device.js` | 右侧连接状态栏（离线 / 连接中 / 在线 / 异常 + 设备列表） |
 | `js/theme.js` | 外观三态：跟随系统 / 浅色 / 深色 |
@@ -153,9 +153,9 @@ node tools/serve.js 4317
 
 ## 6. 界面功能
 
-- **积木库四分页**：左侧选择栏分为四个分页标签——**事件**（when_start / when_true）、
+- **积木库五分页**：左侧选择栏分为五个分页标签——**事件**（when_start / when_true）、
   **控制**（等待 / 循环 / 条件分支 / 流程）、**设备**（智能锁 / 电击器 / 灌肠机 / 跳蛋 / 榨精机）、
-  **值/变量**（数学 / 比较 / 变量 / 设备状态读取）。
+  **运算**（数学 / 比较 / 逻辑组合）、**值/变量**（变量 / 当前时间 / 设备状态读取）。
   默认显示「事件」页；切换分页只切换 hidden 类（积木始终可达，不重建 DOM），每页独立滚动；
   当前分页记在 `localStorage('gp-palette-page')`，刷新 / 重开后恢复，不可用时静默降级为默认页。
   分页标签有选中态、悬停态；面板宽度固定 320px 不挤压画布，小屏（≤760px）改为上下布局、面板占上部；
@@ -202,7 +202,7 @@ node tools/order.test.js     # 画布顺序 / 顶层链顺序 / body 顺序
 node tools/dom.drag.test.js  # 最小 DOM 桩驱动真实 handleDrop 路径
 node tools/example.test.js   # 示例 JSON → 积木 → JSON 结构一致
 node tools/validate.test.js  # 校验规则：事件数量 / 孤立 / 条件 / 槽位 / 数学定义域
-node tools/palette.test.js   # 积木库四分页：结构 / 41 opcode 可达 / 切换 / 记忆 / 降级
+node tools/palette.test.js   # 积木库五分页：结构 / 41 opcode 可达 / 切换 / 记忆 / 降级
 node tools/delete.test.js    # 拖入工具箱删除 + 事件上限（最小 DOM 桩驱动真实路径）
 node tools/device.test.js    # 连接状态栏（含轮询、探活失败、监听不重复绑定）
 node tools/check-markup.js   # 页面元素 id / 脚本加载顺序 / 结构约定

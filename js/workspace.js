@@ -685,8 +685,12 @@
       hint: '蓝牙外设指令：智能锁 / 电击器 / 灌肠机 / 跳蛋 / 榨精机'
     },
     {
-      id: 'value', name: '值/变量', cats: ['operator', 'value'],
-      hint: '变量、数学运算、比较判断、设备状态读取'
+      id: 'operator', name: '运算', cats: ['operator'],
+      hint: '数学运算与比较判断，返回数字或真假'
+    },
+    {
+      id: 'value', name: '值/变量', cats: ['value'],
+      hint: '变量、当前时间与设备状态读取'
     }
   ];
   var PAL_PAGE_KEY = 'gp-palette-page';

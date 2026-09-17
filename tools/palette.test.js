@@ -1,4 +1,4 @@
-/* palette.test.js — 积木库四分页自检（最小 DOM 桩驱动真实代码路径）
+/* palette.test.js — 积木库五分页自检（最小 DOM 桩驱动真实代码路径）
  * 用法: node tools/palette.test.js
  */
 const path = require('path');
@@ -62,9 +62,9 @@ const ws = globalThis.GPWorkspace.init({ rootEl: canvas, paletteEl: palette });
 const tabs = palette.children.find((c) => c._classes.has('pal-tabs'));
 const pages = palette.children.find((c) => c._classes.has('pal-pages'));
 check('面板包含标签栏与页容器', [!!tabs, !!pages], [true, true]);
-check('四个分页标签', tabs.children.length, 4);
-check('标签文案', tabs.children.map((b) => b.textContent), ['事件', '控制', '设备', '值/变量']);
-check('四个页容器', pages.children.length, 4);
+check('五个分页标签', tabs.children.length, 5);
+check('标签文案', tabs.children.map((b) => b.textContent), ['事件', '控制', '设备', '运算', '值/变量']);
+check('五个页容器', pages.children.length, 5);
 
 /* ---------- 2. 41 个 opcode 全部可达 ---------- */
 function pageBlocks(bodyEl) {
@@ -83,21 +83,21 @@ check('全部 41 个 opcode 可达', allOps.length, GP.DEFS.length);
 check('无重复', new Set(allOps).size, allOps.length);
 check('覆盖全部定义', GP.DEFS.every((d) => allOps.indexOf(d.op) >= 0), true);
 const perPage = pages.children.map(pageBlocks).map((a) => a.length);
-check('各页数量', perPage, [2, 7, 10, 22]);
+check('各页数量', perPage, [2, 7, 10, 14, 8]);
 
 /* ---------- 3. 默认显示「事件」页，其他页隐藏 ---------- */
 function visiblePages() {
   return pages.children.filter((p) => !p._classes.has('hidden')).map((p) => p.dataset.page);
 }
 check('默认显示事件页', visiblePages(), ['event']);
-check('事件页 tab 选中态', tabs.children.map((b) => b._classes.has('active')), [true, false, false, false]);
+check('事件页 tab 选中态', tabs.children.map((b) => b._classes.has('active')), [true, false, false, false, false]);
 
 /* ---------- 4. 切换分页：只显示当前页，其他隐藏 ---------- */
 const eventTab = tabs.children[0], controlTab = tabs.children[1];
 controlTab.fire ? null : null;
 (controlTab.handlers.click || []).forEach((fn) => fn({ target: controlTab, preventDefault() {}, stopPropagation() {} }));
 check('切换到控制页', visiblePages(), ['control']);
-check('控制页 tab 选中态', tabs.children.map((b) => b._classes.has('active')), [false, true, false, false]);
+check('控制页 tab 选中态', tabs.children.map((b) => b._classes.has('active')), [false, true, false, false, false]);
 check('切换后 opcode 仍全部可达', pages.children.flatMap(pageBlocks).length, GP.DEFS.length);
 check('切换分页不重建 DOM（积木元素不变）', pages.children.flatMap(pageBlocks).length, allOps.length);
 (eventTab.handlers.click || []).forEach((fn) => fn({ target: eventTab, preventDefault() {}, stopPropagation() {} }));
