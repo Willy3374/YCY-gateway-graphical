@@ -92,5 +92,33 @@ check('body 第一句强度 50', chain.next.body[0].inputs.N, 50);
 check('else 分支保留', chain.next.next.else.map((x) => x.opcode), ['lock_set']);
 check('if 的条件内联在 inputs 中', chain.next.next.inputs.COND.opcode, 'cmp_gt');
 
+/* ---------- 3. 自由摆放：JSON 链序按 pos 排序（y 优先，其次 x） ---------- */
+const fp = {
+  root: [
+    { uid: 'u1', op: 'when_start', fields: { FLAG: true }, children: { body: [], else: [] }, pos: { x: 300, y: 200 } },
+    { uid: 'u2', op: 'wait_seconds', fields: { N: 1, UNIT: '秒' }, children: { body: [], else: [] }, pos: { x: 40, y: 40 } },
+    { uid: 'u3', op: 'when_true', fields: { COND: { uid: 'u4', op: 'cmp_eq', fields: { A: 1, B: 1 }, children: { body: [], else: [] } } }, children: { body: [], else: [] }, pos: { x: 40, y: 320 } }
+  ],
+  variables: []
+};
+const fpSpec = GP.toSpec(fp).spec;
+/* 排序后链序：等待(y=40) → 当开始(y=200,事件帽开新链) → 当条件(y=320,事件帽再开新链) */
+check('自由摆放：链序按 y 再 x',
+  fpSpec.program.map((n) => n.opcode), ['wait_seconds', 'when_start', 'when_true']);
+check('自由摆放：事件帽各自开链（等待块成为首条链）', fpSpec.program[0].opcode, 'wait_seconds');
+check('自由摆放：pos 不进入 JSON', 'pos' in JSON.parse(JSON.stringify(fpSpec.program[0])), false);
+
+// 混合：有 pos 与无 pos 混排，无 pos 的按拖入顺序排在后面
+const mixed = {
+  root: [
+    { uid: 'm1', op: 'when_start', fields: { FLAG: true }, children: { body: [], else: [] } },
+    { uid: 'm2', op: 'tens_all_off', fields: { ID: 1 }, children: { body: [], else: [] }, pos: { x: 10, y: 10 } }
+  ],
+  variables: []
+};
+const mSpec = GP.toSpec(mixed).spec;
+/* 有 pos 的块排前：非事件块开首条链（校验会报 orphan_top，与「事件之前不得有语句」一致） */
+check('混合：有 pos 的块排前', mSpec.program.map((n) => n.opcode), ['tens_all_off', 'when_start']);
+
 console.log(failed ? '\n' + failed + ' 项失败' : '\n全部通过');
 if (failed) process.exitCode = 1;

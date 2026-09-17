@@ -273,11 +273,15 @@ html[data-theme="dark"] .logo-swap .logo-dark { display: block; }
   flex: 1;
   overflow: auto;
   padding: 18px 22px 120px;
+  position: relative; /* 顶层块自由摆放的定位上下文 */
   background-image:
     linear-gradient(var(--grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 26px 26px;
 }
+/* 自由摆放的顶层块：可放置在画布任意位置（像素级） */
+.canvas > .blk { margin: 0 0 6px; }
+.canvas > .blk[style*="position: absolute"] { margin: 0; }
 .canvas.drop-ok { box-shadow: inset 0 0 0 2px rgba(240, 139, 37, .5); }
 .empty-hint { color: var(--hint); font-size: 13px; padding: 24px 0; }
 

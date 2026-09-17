@@ -45,12 +45,20 @@
   /* ---------- 渲染 ---------- */
   function register(block, container) { registry[block.uid] = { block: block, container: container }; }
 
+  var rootBlockEls = {}; // uid -> 顶层块 DOM，渲染后统一应用自由摆放定位
+
   function renderRoot() {
     registry = {};
+    rootBlockEls = {};
     rootEl.innerHTML = '';
     var frag = document.createDocumentFragment();
     state.root.forEach(function (b) { frag.appendChild(renderBlock(b, { kind: 'list', list: state.root })); });
     rootEl.appendChild(frag);
+    /* 自由摆放：拖到画布任意位置（像素级） */
+    state.root.forEach(function (b) {
+      var el = rootBlockEls[b.uid];
+      if (el) applyFreePos(el, b);
+    });
     if (!state.root.length) {
       var hint = document.createElement('div');
       hint.className = 'empty-hint';
@@ -61,6 +69,16 @@
     if (counter) counter.textContent = String(Object.keys(registry).length);
   }
 
+  /* 顶层自由摆放：有 pos 的块绝对定位到画布任意位置，无 pos 的保持流式堆叠 */
+  function applyFreePos(el, b) {
+    if (!b || !b.pos) return;
+    el.style.position = 'absolute';
+    el.style.left = (typeof b.pos.x === 'number' && isFinite(b.pos.x) ? b.pos.x : 0) + 'px';
+    el.style.top = (typeof b.pos.y === 'number' && isFinite(b.pos.y) ? b.pos.y : 0) + 'px';
+    el.style.margin = '0';
+    el.style.zIndex = '1';
+  }
+
   function renderBlock(b, container) {
     var def = GP.getDef(b.op);
     if (!def) return document.createTextNode('');
@@ -69,6 +87,7 @@
     var el = document.createElement('div');
     el.className = 'blk ' + (def.kind === 'reporter' ? 'reporter' : 'statement') + ' cat-' + def.cat;
     el.dataset.uid = b.uid;
+    if (container && container.kind === 'list' && container.list === state.root) rootBlockEls[b.uid] = el;
     if (def.kind === 'hat') el.classList.add('hat');
     if (def.kind === 'cblock') el.classList.add('cblock');
     if (container) el.draggable = true; // 画布/插槽内的积木可拖动
@@ -416,8 +435,16 @@
     }
 
     var ins = insertionIndex(tgt.listEl, e.clientY);
+    /* 顶层自由摆放：记录相对画布的像素位置，落到画布任意位置 */
+    var freePos = null;
+    if (tgt.listEl === null || tgt.listEl === rootEl) {
+      var cr = rootEl.getBoundingClientRect();
+      freePos = { x: Math.round(e.clientX - cr.left + (rootEl.scrollLeft || 0)), y: Math.round(e.clientY - cr.top + (rootEl.scrollTop || 0)) };
+    }
     if (dragInfo.fromPalette) {
-      tgt.arr.splice(ins.idx, 0, newBlock(dragInfo.op));
+      var nb = newBlock(dragInfo.op);
+      if (freePos) nb.pos = freePos;
+      tgt.arr.splice(ins.idx, 0, nb);
     } else {
       var entry2 = registry[dragInfo.uid];
       var b = entry2.block;
@@ -434,6 +461,8 @@
       detach(entry2);
       var idx = ins.idx;
       if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < idx) idx -= 1;
+      if (freePos) b.pos = freePos;
+      else delete b.pos;
       tgt.arr.splice(idx, 0, b);
     }
     refreshVarList();

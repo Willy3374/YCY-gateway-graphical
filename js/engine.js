@@ -95,7 +95,22 @@
 
     var rootList = state.root || [];
     var groups = [];
-    rootList.forEach(function (b) {
+    /* 自由摆放：顶层块可放画布任意位置，JSON 链序按 pos 稳定排序（y 优先、其次 x），
+     * 与视觉位置一致；无 pos 的块保持拖入顺序排在后面。 */
+    var ordered = rootList
+      .map(function (b, i) { return { b: b, i: i }; })
+      .sort(function (p, q) {
+        var pp = p.b.pos, qp = q.b.pos;
+        if (pp && qp) {
+          if (pp.y !== qp.y) return pp.y - qp.y;
+          if (pp.x !== qp.x) return pp.x - qp.x;
+        }
+        if (pp) return -1;
+        if (qp) return 1;
+        return p.i - q.i;
+      })
+      .map(function (w) { return w.b; });
+    ordered.forEach(function (b) {
       if (!GP.getDef(b.op)) throw new Error('未知 opcode: ' + b.op);
       if (GP.isHat(b.op) || groups.length === 0) groups.push([b]);
       else groups[groups.length - 1].push(b);
