@@ -220,7 +220,36 @@
     URL.revokeObjectURL(a.href);
   }
 
+  /* ---------- 错误弹层：校验未通过时不生成 JSON，只展示红色错误信息 ---------- */
+  function showErrorPanel(errors) {
+    var items = (errors || []).map(function (e) { return e.msg; });
+    if (!items.length) items.push('未知校验错误');
+    renderErrors(items);
+    overlay.classList.add('open');
+  }
+
+  function renderErrors(errors) {
+    var head = overlay.querySelector('.modal-title');
+    if (head) {
+      head.dataset.state = 'error';
+      var title = head.textContent || '校验未通过';
+      if (title.indexOf('校验未通过') < 0) head.textContent = '校验未通过';
+    }
+    warnEl.innerHTML = errors.map(function (t) {
+      return '<li class="err-item">✘ ' + t + '</li>';
+    }).join('');
+    outEl.textContent = ''; // 不生成 JSON
+    var copyBtn = $('btn-copy'), dlBtn = $('btn-download');
+    if (copyBtn) copyBtn.disabled = true;
+    if (dlBtn) dlBtn.disabled = true;
+  }
+
   function showOutput(text, warnings, spec) {
+    var head = overlay.querySelector('.modal-title');
+    if (head) head.dataset.state = 'ok';
+    var copyBtn = $('btn-copy'), dlBtn = $('btn-download');
+    if (copyBtn) copyBtn.disabled = false;
+    if (dlBtn) dlBtn.disabled = false;
     outEl.textContent = text;
     renderInfo(warnings, spec);
     overlay.classList.add('open');
@@ -252,6 +281,11 @@
   /* ---------- 校验 ---------- */
   function validate() {
     var res = runValidation(false);
+    /* 校验未通过：不生成 JSON，只弹出红色错误信息 */
+    if (!res.ok) {
+      showErrorPanel(res.errors);
+      return;
+    }
     var spec;
     try {
       spec = GP.toSpec(ws.state);
@@ -259,13 +293,8 @@
       window.GPWorkspace.toast('校验失败: ' + err.message);
       return;
     }
-    var msgs = res.ok ? ['✔ 结构合法，可导出 JSON'] : ['✘ 校验未通过，共 ' + res.errors.length + ' 个错误'];
-    if (!spec.spec.program.length) msgs.push('⚠ 画布为空');
-    if (spec.warnings.length) msgs.push('⚠ ' + spec.warnings.length + ' 处占位/缺省已自动填充（见输出面板）');
-    window.GPWorkspace.toast(msgs[0]);
-    msgs.forEach(function (m) { console.log('[validate]', m); });
     lastSpec = spec;
-    showOutput(JSON.stringify(spec.spec, null, 2), res.ok ? spec.warnings : res.errors.map(function (e) { return '[' + e.code + '] ' + e.msg; }), spec.spec);
+    showOutput(JSON.stringify(spec.spec, null, 2), spec.warnings, spec.spec);
   }
 
   function copyJSON() {
