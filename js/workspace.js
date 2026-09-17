@@ -435,11 +435,14 @@
     }
 
     var ins = insertionIndex(tgt.listEl, e.clientY);
-    /* 顶层自由摆放：记录相对画布的像素位置，落到画布任意位置 */
+    /* 顶层自由摆放：记录相对画布的像素位置，落到画布任意位置；
+     * 已摆放的块再次拖动 → pos 被新位置覆盖，实现自由移动。 */
     var freePos = null;
     if (tgt.listEl === null || tgt.listEl === rootEl) {
       var cr = rootEl.getBoundingClientRect();
-      freePos = { x: Math.round(e.clientX - cr.left + (rootEl.scrollLeft || 0)), y: Math.round(e.clientY - cr.top + (rootEl.scrollTop || 0)) };
+      var px = Math.round(e.clientX - cr.left + (rootEl.scrollLeft || 0));
+      var py = Math.round(e.clientY - cr.top + (rootEl.scrollTop || 0));
+      if (isFinite(px) && isFinite(py)) freePos = { x: px, y: py };
     }
     if (dragInfo.fromPalette) {
       var nb = newBlock(dragInfo.op);
@@ -453,10 +456,16 @@
         oldArr = entry2.container.list;
         oldIdx = oldArr.indexOf(b);
       }
-      if (inDraggedSubtree({ fields: {}, children: { body: tgt.arr, else: [] } }, b.uid) || inListSubtree(b, tgt.arr)) {
-        // 不能把积木拖入自身内部
-        finishDrag();
-        return;
+      /* 不能把积木拖入自身内部：只针对嵌套列表（body/else）。
+       * 顶层根列表（tgt.arr === state.root）放行 —— 已摆放的积木再次拖动换位（自由移动）。 */
+      var isRootList = tgt.arr === state.root;
+      if (!isRootList) {
+        var ownerUid = tgt.listEl && tgt.listEl.dataset ? tgt.listEl.dataset.owner : null;
+        var ownerEntry = ownerUid ? registry[ownerUid] : null;
+        if (!ownerEntry || ownerEntry.block === b || inDraggedSubtree(b, ownerUid)) {
+          finishDrag();
+          return;
+        }
       }
       detach(entry2);
       var idx = ins.idx;

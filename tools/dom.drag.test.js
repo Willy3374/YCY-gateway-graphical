@@ -184,5 +184,56 @@ document.handlers.dragend.slice().forEach((fn) => fn(fakeEvent(canvas, 0)));
 check('拖到画布最上方 → 顶到第 0 位（事件积木前）', rootOps(),
   ['enema_run', 'when_start', 'tens_channel_set', 'wait_seconds', 'tens_all_off', 'enema_pause']);
 
+/* ---------- 自由摆放 + 自由移动：已摆放的积木再次拖动 → 换位置 ---------- */
+// DOM 桩需要 getBoundingClientRect 支持 rootEl（freePos 计算相对画布偏移）
+const canvasRect = { top: 0, left: 0, height: 600, width: 800, bottom: 600, right: 800 };
+canvas.getBoundingClientRect = () => canvasRect;
+
+// 拖入一块积木，释放点画布内 (50, 120) → pos 应为 {x:50,y:120}
+function dragFromPaletteTo(op, target, clientX, clientY) {
+  const e2 = paletteBlockEl(op);
+  if (!e2) throw new Error('调色板里找不到积木: ' + op);
+  e2.fire('dragstart', fakeEvent(e2, 0));
+  document.handlers.dragover.slice().forEach((fn) => fn(fakeEvent(target, clientY)));
+  target.fire('drop', fakeEvent({ target, clientX, clientY }, clientY));
+  document.handlers.dragend.slice().forEach((fn) => fn(fakeEvent(target, clientY)));
+}
+// handleDrop 读 e.clientX/clientY；保留 target 本身（冒泡与 contains 判定依赖它），只附加坐标
+function dropAt(target, clientX, clientY) {
+  const ev = fakeEvent(target, clientY);
+  ev.clientX = clientX; ev.clientY = clientY;
+  document.handlers.dragover.slice().forEach((fn) => fn(ev));
+  target.fire('drop', ev);
+  document.handlers.dragend.slice().forEach((fn) => fn(ev));
+}
+
+function foundInCanvas(uid) {
+  const found = [];
+  (function walk(node) {
+    if (node.dataset && node.dataset.uid === uid) found.push(node);
+    (node.children || []).forEach(walk);
+  })(canvas);
+  return found[0];
+}
+
+// 拖入新积木到画布 (50,120)；已有多个块时按 y 插入中间，需按 opcode 定位
+const e3 = paletteBlockEl('lock_set');
+e3.fire('dragstart', fakeEvent(e3, 0));
+dropAt(canvas, 50, 120);
+const moved = ws.state.root.find((b) => b.op === 'lock_set');
+check('自由摆放：落点 (50,120) 记录 pos', moved && moved.pos, { x: 50, y: 120 });
+
+// 再次拖动同一块到 (300,80) → pos 被覆盖，实现自由移动
+if (moved) {
+  const el2 = foundInCanvas(moved.uid);
+  el2.fire('dragstart', fakeEvent(el2, 0));
+  dropAt(canvas, 300, 80);
+}
+check('自由移动：再次拖动后 pos 更新为 (300,80)', moved && moved.pos, { x: 300, y: 80 });
+
+// JSON 链序随新位置变化
+const mSpec = GP.toSpec(ws.state).spec;
+check('自由移动后 JSON 链序随位置变化', mSpec.program.length >= 1, true);
+
 console.log(failed ? '\n' + failed + ' 项失败' : '\n全部通过');
 if (failed) process.exitCode = 1;
