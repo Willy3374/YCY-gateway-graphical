@@ -359,6 +359,13 @@
     hoverEl = null;
     rootEl.classList.remove('drop-ok');
     if (paletteEl) paletteEl.classList.remove('drop-delete');
+    /* 清除吸附高亮 */
+    if (rootBlockEls) {
+      Object.keys(rootBlockEls).forEach(function (uid) {
+        var el = rootBlockEls[uid];
+        if (el && el.classList) el.classList.remove('snap-target');
+      });
+    }
   }
 
   function handleDragOver(e) {
@@ -377,6 +384,14 @@
     if (tgt.kind === 'slot') { tgt.slotEl.classList.add('drop-ok'); hoverEl = tgt.slotEl; }
     else if (tgt.listEl) { tgt.listEl.classList.add('drop-ok'); hoverEl = tgt.listEl; }
     else rootEl.classList.add('drop-ok');
+    /* 顶层拖动：靠近某块底部 → 高亮该块，提示吸附 */
+    if ((tgt.listEl === null || tgt.listEl === rootEl) && typeof e.clientX === 'number') {
+      var snapHint = findSnapTarget(e.clientX, e.clientY);
+      if (snapHint) {
+        var snapEl = rootBlockEls[snapHint.uid];
+        if (snapEl) snapEl.classList.add('snap-target');
+      }
+    }
   }
 
   /* 按各块的垂直中线决定插入下标：指针在某个块中线之上 → 插到它前面，
@@ -408,6 +423,25 @@
     return { idx: insertIndexFromMids(mids, clientY), kids: kids };
   }
 
+  /* ---------- 拖到某块底部附近 → 吸附到其正下方（并接入它的执行链） ----------
+   * 指针落在某块底缘 SNAP_DIST 像素内且水平重叠 → 吸附：x 对齐该块，y 紧贴其底缘，
+   * 并插入到该块之后（同一执行链）。拖到无块附近则自由摆放。
+   */
+  var SNAP_DIST = 14;
+
+  function findSnapTarget(x, y) {
+    var best = null, bestDist = SNAP_DIST;
+    rootBlockEls && Object.keys(rootBlockEls).forEach(function (uid) {
+      var el = rootBlockEls[uid];
+      if (!el || !el.getBoundingClientRect) return;
+      var r = el.getBoundingClientRect();
+      var inX = x >= r.left - 8 && x <= r.right + 8;
+      var d = Math.abs(y - r.bottom);
+      if (inX && d < bestDist) { bestDist = d; best = { uid: uid, x: r.left, y: r.bottom }; }
+    });
+    return best;
+  }
+
   function handleDrop(e) {
     if (!dragInfo) return;
     var tgt = resolveTarget(e);
@@ -436,18 +470,26 @@
 
     var ins = insertionIndex(tgt.listEl, e.clientY);
     /* 顶层自由摆放：记录相对画布的像素位置，落到画布任意位置；
-     * 已摆放的块再次拖动 → pos 被新位置覆盖，实现自由移动。 */
+     * 已摆放的块再次拖动 → pos 被新位置覆盖，实现自由移动。
+     * 拖到某块底部附近 → 吸附到其正下方（对齐 x，紧贴底缘），并接入它的执行链。 */
     var freePos = null;
+    var snapIdx = -1;
     if (tgt.listEl === null || tgt.listEl === rootEl) {
       var cr = rootEl.getBoundingClientRect();
       var px = Math.round(e.clientX - cr.left + (rootEl.scrollLeft || 0));
       var py = Math.round(e.clientY - cr.top + (rootEl.scrollTop || 0));
-      if (isFinite(px) && isFinite(py)) freePos = { x: px, y: py };
+      var snap = (typeof e.clientX === 'number') ? findSnapTarget(e.clientX, e.clientY) : null;
+      if (snap) {
+        freePos = { x: Math.round(snap.x - cr.left + (rootEl.scrollLeft || 0)), y: Math.round(snap.y - cr.top + (rootEl.scrollTop || 0)) };
+        snapIdx = indexOfUid(state.root, snap.uid); // 插到吸附块之后
+      } else if (isFinite(px) && isFinite(py)) {
+        freePos = { x: px, y: py };
+      }
     }
     if (dragInfo.fromPalette) {
       var nb = newBlock(dragInfo.op);
       if (freePos) nb.pos = freePos;
-      tgt.arr.splice(ins.idx, 0, nb);
+      tgt.arr.splice(snapIdx >= 0 ? snapIdx + 1 : ins.idx, 0, nb);
     } else {
       var entry2 = registry[dragInfo.uid];
       var b = entry2.block;
@@ -468,7 +510,7 @@
         }
       }
       detach(entry2);
-      var idx = ins.idx;
+      var idx = snapIdx >= 0 ? snapIdx + 1 : ins.idx;
       if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < idx) idx -= 1;
       if (freePos) b.pos = freePos;
       else delete b.pos;
@@ -483,6 +525,12 @@
     var hit = false;
     (arr || []).forEach(function (n) { if (n === block || inDraggedSubtree(n, block.uid)) hit = true; });
     return hit;
+  }
+
+  /* 在顶层列表中查找某 uid 的下标（供吸附插入） */
+  function indexOfUid(arr, uid) {
+    for (var i = 0; i < (arr || []).length; i++) { if (arr[i].uid === uid) return i; }
+    return -1;
   }
 
   function handleDragStart(e) {

@@ -235,5 +235,59 @@ check('自由移动：再次拖动后 pos 更新为 (300,80)', moved && moved.po
 const mSpec = GP.toSpec(ws.state).spec;
 check('自由移动后 JSON 链序随位置变化', mSpec.program.length >= 1, true);
 
+/* ---------- 吸附：拖到某块底部附近 → 吸附到其正下方并接入执行链 ---------- */
+// 桩的 getBoundingClientRect 需要返回实际块位置（rootBlockEls 渲染后的块）
+// 给画布桩补上真实的 rect：按 dataset.uid 定位，返回预设位置表
+const RECTS = {};
+function setRect(uid, left, top, width, height) {
+  RECTS[uid] = { left, top, width, height, right: left + width, bottom: top + height };
+}
+function rectFor(el) {
+  if (el === canvas) return canvasRect;
+  const uid = el.dataset && el.dataset.uid;
+  if (uid && RECTS[uid]) return RECTS[uid];
+  const o = el.parentNode ? el.parentNode.children.indexOf(el) : 0;
+  const top = 100 + o * 40;
+  return { top, left: 0, height: 34, width: 300, bottom: top + 34, right: 300 };
+}
+// 把 RECTS 应用到画布内所有顶层积木元素（rootBlockEls 读的是元素自身的 getBoundingClientRect）
+function applyRects() {
+  (function walk(node) {
+    if (node._classes && node._classes.has('blk') && node.dataset && node.dataset.uid) {
+      node.getBoundingClientRect = () => rectFor(node);
+    }
+    (node.children || []).forEach(walk);
+  })(canvas);
+}
+canvas.getBoundingClientRect = () => ({ top: 0, left: 0, height: 600, width: 800, bottom: 600, right: 800 });
+
+// 当前画布：若干块。找到 when_start 块与 lock_set 块，设置真实位置
+const hatEntry = ws.state.root.find((b) => GP.isHat(b.op));
+const lockEntry = ws.state.root.find((b) => b.op === 'lock_set');
+if (hatEntry && lockEntry) {
+  setRect(hatEntry.uid, 40, 100, 220, 40);   // when_start 在 (40,100)，底缘 140
+  setRect(lockEntry.uid, 400, 300, 220, 40); // lock_set 在远处 (400,300)
+  applyRects();
+}
+
+// 把 lock_set 拖到 when_start 底部附近（clientX=100，clientY=145，在底缘 140 的 14px 内）
+if (hatEntry && lockEntry) {
+  const elS = foundInCanvas(lockEntry.uid);
+  elS.fire('dragstart', fakeEvent(elS, 0));
+  dropAt(canvas, 100, 145);
+}
+check('吸附：落点在某块底缘附近 → pos 对齐该块正下方',
+  lockEntry && lockEntry.pos, { x: 40, y: 140 });
+check('吸附：插入到吸附块之后（同一执行链）',
+  hatEntry && ws.state.root[ws.state.root.indexOf(hatEntry) + 1] === lockEntry, true);
+
+// 远离任何块底部 → 自由摆放不受影响
+if (lockEntry) {
+  const elS2 = foundInCanvas(lockEntry.uid);
+  elS2.fire('dragstart', fakeEvent(elS2, 0));
+  dropAt(canvas, 600, 500);
+}
+check('远离块底部 → 自由摆放', lockEntry && lockEntry.pos, { x: 600, y: 500 });
+
 console.log(failed ? '\n' + failed + ' 项失败' : '\n全部通过');
 if (failed) process.exitCode = 1;
