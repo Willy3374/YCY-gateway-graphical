@@ -430,6 +430,26 @@ html[data-theme="dark"] .logo-swap .logo-dark { display: block; }
 
 body.dragging .palette-blk { cursor: grabbing; }
 
+/* ---------- 拖入工具箱删除：高亮反馈 ----------
+ * 画布积木拖到左侧选择栏上方时高亮工具箱，提示释放即删除。
+ */
+.palette.drop-delete { box-shadow: inset 0 0 0 2px rgba(255, 80, 80, .6); }
+.palette.drop-delete::after {
+  content: '松手删除';
+  position: sticky;
+  top: 0;
+  display: block;
+  margin: -10px -10px 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 8px;
+  background: rgba(255, 80, 80, .85);
+  color: #fff;
+  pointer-events: none;
+}
+
 /* ---------- 输出弹层 ---------- */
 .overlay {
   position: fixed;

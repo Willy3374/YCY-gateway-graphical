@@ -36,6 +36,8 @@
       if (e.target === startOverlay) startOverlay.classList.remove('open');
     });
     initDevice();
+    /* 画布变化后自动静默校验（拖拽删除 / 新增 / 清空后同步刷新提示） */
+    ws.onChange(function () { runValidation(true); });
     nameInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { e.preventDefault(); confirmSave(); }
     });
@@ -50,10 +52,11 @@
   }
 
   /* ---------- 「开始」：下发程序到网关
-   * 目前为占位：未连接时弹「未连接到网关」，连接后弹已下发提示。
-   * 接入网关时把 send() 里的 TODO 换成真实下发接口即可。
+   * 校验失败时阻止下发并提示；未连接时弹「未连接到网关」。
    */
   function openStartDialog() {
+    var check = runValidation(false);
+    if (!check.ok) return; // 校验失败：阻止下发
     var state = window.GPDevice ? window.GPDevice.getState() : 'disconnected';
     var notice = $('start-notice');
     var text = $('start-notice-text');
@@ -106,8 +109,12 @@
     return '' + d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + p2(d.getHours()) + p2(d.getMinutes());
   }
 
-  /* ---------- 执行：生成 → 弹命名窗 → 确认后保存 ---------- */
+  /* ---------- 执行：校验 → 生成 → 弹命名窗 → 确认后保存 ----------
+   * 校验失败时阻止生成并给出可定位的中文提示。
+   */
   function run() {
+    var check = runValidation(false);
+    if (!check.ok) return; // 校验失败：阻止生成
     var res;
     try {
       res = GP.toSpec(ws.state);
@@ -225,24 +232,40 @@
     warnEl.innerHTML = items.map(function (t) { return '<li>' + t + '</li>'; }).join('');
   }
 
+  /* ---------- 校验 ----------
+   * 必要校验全部通过才允许生成 / 开始；失败时 toast 首个错误并展示全部错误。
+   * 校验规则见 js/engine.js 的 GP.validate（事件数量 / 顶层孤立 / 条件非空 /
+   * 槽位类型 / opcode 合法 / 数学定义域）。
+   */
+  function runValidation(silent) {
+    if (!window.GP || typeof window.GP.validate !== 'function') return { ok: true, errors: [] };
+    var res = window.GP.validate(ws.state);
+    if (!res.ok && !silent) {
+      var first = res.errors[0];
+      window.GPWorkspace.toast('校验未通过：' + (first ? first.msg : '未知错误'));
+      console.log('[validate] 共 ' + res.errors.length + ' 个错误：');
+      res.errors.forEach(function (e) { console.log('  - [' + e.code + '] ' + e.msg); });
+    }
+    return res;
+  }
+
   /* ---------- 校验 ---------- */
   function validate() {
-    var res;
+    var res = runValidation(false);
+    var spec;
     try {
-      res = GP.toSpec(ws.state);
+      spec = GP.toSpec(ws.state);
     } catch (err) {
       window.GPWorkspace.toast('校验失败: ' + err.message);
       return;
     }
-    var msgs = ['✔ 结构合法，可导出 JSON'];
-    if (!res.spec.program.length) msgs.push('⚠ 画布为空');
-    var bad = res.spec.program.filter(function (n) { return !GP.isHat(n.opcode); });
-    if (bad.length) msgs.push('⚠ 有 ' + bad.length + ' 条顶层链没有以事件积木开头');
-    if (res.warnings.length) msgs.push('⚠ ' + res.warnings.length + ' 处占位/缺省已自动填充（见输出面板）');
+    var msgs = res.ok ? ['✔ 结构合法，可导出 JSON'] : ['✘ 校验未通过，共 ' + res.errors.length + ' 个错误'];
+    if (!spec.spec.program.length) msgs.push('⚠ 画布为空');
+    if (spec.warnings.length) msgs.push('⚠ ' + spec.warnings.length + ' 处占位/缺省已自动填充（见输出面板）');
     window.GPWorkspace.toast(msgs[0]);
     msgs.forEach(function (m) { console.log('[validate]', m); });
-    lastSpec = res;
-    showOutput(JSON.stringify(res.spec, null, 2), res.warnings, res.spec);
+    lastSpec = spec;
+    showOutput(JSON.stringify(spec.spec, null, 2), res.ok ? spec.warnings : res.errors.map(function (e) { return '[' + e.code + '] ' + e.msg; }), spec.spec);
   }
 
   function copyJSON() {

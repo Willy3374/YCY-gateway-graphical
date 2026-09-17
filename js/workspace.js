@@ -339,12 +339,19 @@
     if (hoverEl) hoverEl.classList.remove('drop-ok');
     hoverEl = null;
     rootEl.classList.remove('drop-ok');
+    if (paletteEl) paletteEl.classList.remove('drop-delete');
   }
 
   function handleDragOver(e) {
     if (!dragInfo) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = dragInfo.fromPalette ? 'copy' : 'move';
+    /* 画布积木拖到工具箱上方：高亮提示释放即删除 */
+    if (!dragInfo.fromPalette && isOverPalette(e)) {
+      clearHint();
+      if (paletteEl) paletteEl.classList.add('drop-delete');
+      return;
+    }
     var tgt = resolveTarget(e);
     clearHint();
     if (!tgt) return;
@@ -460,6 +467,42 @@
     e.stopPropagation();
   }
 
+  /* ---------- 拖入左侧选择栏删除 ----------
+   * 画布内的积木拖到工具箱（palette）上释放 → 删除该积木（含下级堆叠）。
+   * 从工具箱拖出创建新积木不受影响（fromPalette 的拖拽不进入此分支）。
+   */
+  function deleteByUid(blockUid) {
+    var entry = registry[blockUid];
+    if (!entry) return false;
+    var inp = entry.container && entry.container.kind === 'slot'
+      ? inputDefOf(GP.getDef(entry.container.parent.op), entry.container.name) : null;
+    if (inp && inp.type === 'condition_block') {
+      forget(entry.block);
+      entry.container.parent.fields[entry.container.name] = null;
+    } else {
+      detach(entry); // 列表内：splice 一并移除下级堆叠（下级堆叠是 children 数组，随父块一起离开 state.root）
+    }
+    // 删除后：刷新变量表、重渲染画布，并触发校验（main.js 里的 onWorkspaceChange）
+    refreshVarList();
+    renderRoot();
+    notifyChange();
+    return true;
+  }
+
+  /* 状态变化通知：供 main.js 触发校验刷新 */
+  var changeListeners = [];
+  function notifyChange() {
+    changeListeners.slice().forEach(function (fn) { fn(); });
+  }
+
+  function isOverPalette(e) {
+    if (!paletteEl) return false;
+    var t = e.target;
+    if (!t || !t.closest) return false;
+    var hit = t.closest('.palette');
+    return !!hit && (paletteEl === hit || paletteEl.contains(hit));
+  }
+
   function finishDrag() {
     dragInfo = null;
     document.body.classList.remove('dragging');
@@ -515,6 +558,29 @@
     (src || []).forEach(function (n) { importChain(n, out); });
   }
 
+  /* ---------- 面板：事件积木数量上限 ----------
+   * 顶层事件块只允许 when_start / when_true，总数最多 2（任意组合）。
+   * 超限时阻止从工具箱拖出 / 双击追加，并给出中文提示。
+   */
+  var MAX_EVENT_BLOCKS = 2;
+  var EVENT_LIMIT_MSG = '事件积木最多 2 个（当开始被点击 / 当条件为真可任意组合），请先删除一个再添加';
+
+  function countHats() {
+    var n = 0;
+    function isHat(b) { var d = GP.getDef(b.op); return !!d && d.kind === 'hat'; }
+    function walk(arr) {
+      (arr || []).forEach(function (b) {
+        if (isHat(b)) n++;
+        (b.children.body || []).forEach(function (c) { if (isHat(c)) n++; });
+        (b.children.else || []).forEach(function (c) { if (isHat(c)) n++; });
+      });
+    }
+    walk(state.root);
+    return n;
+  }
+
+  function hatLimitReached() { return countHats() >= MAX_EVENT_BLOCKS; }
+
   /* ---------- 面板 ---------- */
   function renderPalette() {
     paletteEl.innerHTML = '';
@@ -532,7 +598,15 @@
         el.classList.add('palette-blk');
         el.draggable = true;
         el.title = def.op + ' — 拖到画布，或双击追加';
-        el.addEventListener('dragstart', function (e) { paletteDragStart(e, def.op); });
+        el.addEventListener('dragstart', function (e) {
+          if (GP.isHat(def.op) && hatLimitReached()) {
+            toast(EVENT_LIMIT_MSG);
+            e.preventDefault();
+            finishDrag();
+            return;
+          }
+          paletteDragStart(e, def.op);
+        });
         el.addEventListener('dragend', finishDrag);
         el.addEventListener('dblclick', function () { addToRoot(def.op); });
         group.appendChild(el);
@@ -547,14 +621,11 @@
       toast('运算/判断积木需要拖到插槽中');
       return;
     }
-    if (GP.isHat(op)) {
-      for (var i = 0; i < state.root.length; i++) {
-        if (GP.isHat(state.root[i].op)) { toast('事件积木已在画布顶部'); return; }
-      }
-      state.root.unshift(b);
-    } else {
-      state.root.push(b);
+    if (GP.isHat(op) && hatLimitReached()) {
+      toast(EVENT_LIMIT_MSG);
+      return;
     }
+    state.root.push(b);
     refreshVarList();
     renderRoot();
   }
@@ -579,10 +650,24 @@
     document.addEventListener('dragover', function (e) {
       if (!dragInfo) return;
       if (rootEl.contains(e.target) || e.target === rootEl) handleDragOver(e);
+      else if (!dragInfo.fromPalette && isOverPalette(e)) {
+        /* 拖到工具箱上方：允许 drop，高亮提示删除 */
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        handleDragOver(e);
+      }
       else { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; }
     });
     document.addEventListener('drop', function (e) {
       if (!dragInfo) return;
+      /* 画布积木拖到工具箱上释放 → 删除该积木（含下级堆叠） */
+      if (!dragInfo.fromPalette && isOverPalette(e)) {
+        e.preventDefault();
+        var removed = deleteByUid(dragInfo.uid);
+        if (removed) toast('已删除积木（含其下级堆叠）');
+        finishDrag();
+        return;
+      }
       if (!rootEl.contains(e.target) && e.target !== rootEl) { e.preventDefault(); finishDrag(); return; }
       handleDrop(e);
     });
@@ -590,10 +675,11 @@
 
     return {
       state: state,
-      render: function () { refreshVarList(); renderRoot(); },
-      clear: function () { state.root = []; state.seq = 0; renderRoot(); },
+      render: function () { refreshVarList(); renderRoot(); notifyChange(); },
+      clear: function () { state.root = []; state.seq = 0; renderRoot(); notifyChange(); },
       loadSpec: loadSpec,
-      addToRoot: addToRoot
+      addToRoot: addToRoot,
+      onChange: function (fn) { if (typeof fn === 'function') changeListeners.push(fn); }
     };
   }
 
@@ -608,6 +694,11 @@
       var out = [];
       (spec.program || []).forEach(function (n) { importChain(n, out); });
       return out;
-    }
+    },
+    /* 供自检使用：事件积木数量上限与删除 */
+    hatLimitReached: function () { return hatLimitReached(); },
+    countHats: countHats,
+    deleteByUid: function (uid) { return deleteByUid(uid); },
+    MAX_EVENT_BLOCKS: MAX_EVENT_BLOCKS
   };
 })(typeof window !== 'undefined' ? window : globalThis);
