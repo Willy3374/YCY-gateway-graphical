@@ -429,6 +429,8 @@
    */
   var SNAP_DIST = 14;
 
+  /* 指针落在某块顶缘或底缘 SNAP_DIST 像素内且水平重叠 → 吸附。
+   * edge: 'bottom' → 插到该块之后（下方拼接）；'top' → 插到该块之前（上方接入）。 */
   function findSnapTarget(x, y) {
     var best = null, bestDist = SNAP_DIST;
     rootBlockEls && Object.keys(rootBlockEls).forEach(function (uid) {
@@ -436,8 +438,11 @@
       if (!el || !el.getBoundingClientRect) return;
       var r = el.getBoundingClientRect();
       var inX = x >= r.left - 8 && x <= r.right + 8;
-      var d = Math.abs(y - r.bottom);
-      if (inX && d < bestDist) { bestDist = d; best = { uid: uid, x: r.left, y: r.bottom }; }
+      if (!inX) return;
+      var dB = Math.abs(y - r.bottom);
+      var dT = Math.abs(y - r.top);
+      if (dB < bestDist && dB <= dT) { bestDist = dB; best = { uid: uid, x: r.left, y: r.bottom, edge: 'bottom' }; }
+      else if (dT < bestDist) { bestDist = dT; best = { uid: uid, x: r.left, y: r.top, edge: 'top' }; }
     });
     return best;
   }
@@ -472,9 +477,11 @@
     var ins = insertionIndex(tgt.listEl, e.clientY);
     /* 顶层自由摆放：记录相对画布的像素位置，落到画布任意位置；
      * 已摆放的块再次拖动 → pos 被新位置覆盖，实现自由移动。
-     * 拖到某块底部附近 → 吸附到其正下方（对齐 x，紧贴底缘），并接入它的执行链。 */
+     * 拖到某块底缘附近 → 吸附到其正下方（下方拼接，插到它之后）；
+     * 拖到某块顶缘附近 → 向上对接（插到它之前）。 */
     var freePos = null;
     var snapIdx = -1;
+    var snapBefore = false;
     if (tgt.listEl === null || tgt.listEl === rootEl) {
       var cr = rootEl.getBoundingClientRect();
       var px = Math.round(e.clientX - cr.left + (rootEl.scrollLeft || 0));
@@ -482,7 +489,9 @@
       var snap = (typeof e.clientX === 'number') ? findSnapTarget(e.clientX, e.clientY) : null;
       if (snap) {
         freePos = { x: Math.round(snap.x - cr.left + (rootEl.scrollLeft || 0)), y: Math.round(snap.y - cr.top + (rootEl.scrollTop || 0)) };
-        snapIdx = indexOfUid(state.root, snap.uid); // 插到吸附块之后
+        snapIdx = indexOfUid(state.root, snap.uid); // 底缘：插到吸附块之后；顶缘：插到它之前
+        snapBefore = snap.edge === 'top';
+        if (snapBefore) freePos.y = Math.max(0, freePos.y - 0); // y 已是吸附块顶缘，插入后渲染自然上移
       } else if (isFinite(px) && isFinite(py)) {
         freePos = { x: px, y: py };
       }
@@ -512,10 +521,28 @@
         }
       }
       detach(entry2);
-      var idx = snapIdx >= 0 ? snapIdx + 1 : ins.idx;
+      var idx = snapIdx >= 0 ? (snapBefore ? snapIdx : snapIdx + 1) : ins.idx;
       if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < idx) idx -= 1;
-      if (freePos) b.pos = freePos;
-      else delete b.pos;
+      if (freePos) {
+        b.pos = freePos;
+        /* 整体联动：组内相连积木按相对偏移同步移动，保持连接结构不变 */
+        (dragInfo.group || []).forEach(function (g) {
+          if (g.uid === b.uid) return;
+          var ge = registry[g.uid];
+          if (!ge || !ge.block) return;
+          ge.block.pos = { x: freePos.x + g.dx, y: freePos.y + g.dy };
+          /* 组内块也插入到同一执行链（保持相对顺序） */
+        });
+        /* 把组内其余块按原相对顺序插到首块之后 */
+        var groupRest = (dragInfo.group || []).filter(function (g) { return g.uid !== b.uid; });
+        groupRest.forEach(function (g, gi) {
+          var ge = registry[g.uid];
+          if (!ge || !ge.block) return;
+          var oldG = ge.container && ge.container.kind === 'list' ? ge.container.list.indexOf(ge.block) : -1;
+          if (oldG >= 0) ge.container.list.splice(oldG, 1);
+          tgt.arr.splice(idx + 1 + gi, 0, ge.block);
+        });
+      } else delete b.pos;
       tgt.arr.splice(idx, 0, b);
       placedUidOut = b.uid;
     }
@@ -543,10 +570,29 @@
     if (!el || !rootEl.contains(el)) return;
     var entry = registry[el.dataset.uid];
     if (!entry) return;
-    dragInfo = { fromPalette: false, uid: entry.block.uid };
+    dragInfo = { fromPalette: false, uid: entry.block.uid, group: computeDragGroup(entry.block) };
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', entry.block.uid);
     document.body.classList.add('dragging');
+  }
+
+  /* 整体联动拖拽：拖拽某块时，其下方串联绑定（吸附对齐）的相连积木作为整体同步移动。
+   * 判定：顶层根列表中，紧随其后的块 pos.x 与前一块相同且 y 递增（吸附拼接的结果），
+   * 这些块构成一个组，保持相对位置随首块同步移动。
+   * 返回 [{ uid, dx, dy }]（相对首块旧 pos 的偏移，首块为 0,0）。 */
+  function computeDragGroup(head) {
+    var idx = indexOfUid(state.root, head.uid);
+    if (idx < 0 || !head.pos) return [{ uid: head.uid, dx: 0, dy: 0 }];
+    var group = [{ uid: head.uid, dx: 0, dy: 0 }];
+    var prev = head.pos;
+    for (var j = idx + 1; j < state.root.length; j++) {
+      var n = state.root[j];
+      if (!n.pos) break; // 无 pos（顺排块）不属于自由拼接组
+      if (Math.abs(n.pos.x - prev.x) > 1 || n.pos.y <= prev.y) break; // x 对齐且 y 递增才视为相连
+      group.push({ uid: n.uid, dx: n.pos.x - head.pos.x, dy: n.pos.y - head.pos.y });
+      prev = n.pos;
+    }
+    return group;
   }
 
   function paletteDragStart(e, op) {
@@ -671,6 +717,7 @@
       var n = document.createElement('div');
       n.className = 'place-note';
       n.textContent = note;
+      if (connectedTarget && n.setAttribute) n.setAttribute('data-type', 'connected');
       n.style.left = lx + 'px';
       n.style.top = ly + 'px';
       if (rootEl && rootEl.appendChild) rootEl.appendChild(n);

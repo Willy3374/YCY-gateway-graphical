@@ -67,11 +67,11 @@ function makeEl(tag) {
       return false;
     },
     querySelectorAll() { return []; },
-    /* 顺序堆叠：每块高 34px，间距 6px，从 y=100 起 */
+    /* 顺序堆叠：每块高 34px，间距 6px，从 y=100 起；left 放远处（left:0 会参与顶缘/底缘吸附竞争） */
     getBoundingClientRect() {
       const order = el.parentNode ? el.parentNode.children.indexOf(el) : 0;
       const top = 100 + order * 40;
-      return { top, height: 34, bottom: top + 34, left: 0, right: 300, width: 300 };
+      return { top, height: 34, bottom: top + 34, left: 700, right: 1000, width: 300 };
     },
     fire(type, ev) {
       const list = (el.handlers[type] || []).slice();
@@ -246,9 +246,10 @@ function rectFor(el) {
   if (el === canvas) return canvasRect;
   const uid = el.dataset && el.dataset.uid;
   if (uid && RECTS[uid]) return RECTS[uid];
+  /* 无预设位置的块：放远处（left:0 会在顶缘吸附时竞争干扰场景） */
   const o = el.parentNode ? el.parentNode.children.indexOf(el) : 0;
-  const top = 100 + o * 40;
-  return { top, left: 0, height: 34, width: 300, bottom: top + 34, right: 300 };
+  const top = 500 + o * 40;
+  return { top, left: 700, height: 34, width: 200, bottom: top + 34, right: 900 };
 }
 // 把 RECTS 应用到画布内所有顶层积木元素（rootBlockEls 读的是元素自身的 getBoundingClientRect）
 function applyRects() {
@@ -261,11 +262,22 @@ function applyRects() {
 }
 canvas.getBoundingClientRect = () => ({ top: 0, left: 0, height: 600, width: 800, bottom: 600, right: 800 });
 
-// 当前画布：若干块。找到 when_start 块与 lock_set 块，设置真实位置
+// 把无关块移远（默认桩位置 top=100+o*40 会在顶缘吸附时竞争），保证场景隔离
+function moveAside(entry, x, y) {
+  if (!entry) return;
+  setRect(entry.uid, x, y, 220, 40);
+  const elx = foundInCanvas(entry.uid);
+  if (elx) elx.getBoundingClientRect = () => ({ left: x, top: y, width: 220, height: 40, right: x + 220, bottom: y + 40 });
+}
+
+// 当前画布：若干块。找到 when_start 块与 lock_set 块，设置真实位置；其余移远
 const hatEntry = ws.state.root.find((b) => GP.isHat(b.op));
 const lockEntry = ws.state.root.find((b) => b.op === 'lock_set');
+ws.state.root.forEach((b) => {
+  if (b !== hatEntry && b !== lockEntry) moveAside(b, 700, 500 + ws.state.root.indexOf(b) * 60);
+});
 if (hatEntry && lockEntry) {
-  setRect(hatEntry.uid, 40, 100, 220, 40);   // when_start 在 (40,100)，底缘 140
+  setRect(hatEntry.uid, 40, 100, 220, 40);   // when_start 在 (40,100)，底缘 140、顶缘 100
   setRect(lockEntry.uid, 400, 300, 220, 40); // lock_set 在远处 (400,300)
   applyRects();
 }
@@ -288,6 +300,48 @@ if (lockEntry) {
   dropAt(canvas, 600, 500);
 }
 check('远离块底部 → 自由摆放', lockEntry && lockEntry.pos, { x: 600, y: 500 });
+
+/* ---------- 上方接入：拖到某块顶缘附近 → 插到它之前（向上对接） ---------- */
+if (hatEntry && lockEntry) {
+  // 重置位置：when_start 在 (40,100)（顶缘 100），lock_set 拖到其顶缘上方 (100, 95)
+  setRect(hatEntry.uid, 40, 100, 220, 40);
+  applyRects(); // drop 后 renderRoot 重建 DOM，需重新应用预设 rect
+  const elT = foundInCanvas(lockEntry.uid);
+  elT.getBoundingClientRect = () => ({ left: 600, top: 400, width: 220, height: 40, right: 820, bottom: 440 });
+  elT.fire('dragstart', fakeEvent(elT, 0));
+  dropAt(canvas, 100, 95); // 顶缘 100 的 5px 内 → 顶缘吸附
+}
+check('顶缘吸附：落点在某块顶缘附近 → pos 对齐该块正上方',
+  lockEntry && lockEntry.pos, { x: 40, y: 100 });
+check('顶缘吸附：插入到吸附块之前（同一执行链）',
+  hatEntry && ws.state.root[ws.state.root.indexOf(hatEntry) - 1] === lockEntry, true);
+
+/* ---------- 整体联动：下方串联绑定的相连积木随首块同步移动 ---------- */
+// 造组：把 lock_set 吸附到 when_start 底部（形成 x 对齐 + y 递增的组），再拖 when_start 整体移动
+if (hatEntry && lockEntry) {
+  setRect(hatEntry.uid, 40, 100, 220, 40);
+  hatEntry.pos = { x: 40, y: 100 }; // 重置首块 pos（前面测试可能遗留旧值，x 对齐是组判定前提）
+  applyRects(); // 重建后重新应用
+  const elR = foundInCanvas(lockEntry.uid);
+  elR.getBoundingClientRect = () => ({ left: 600, top: 400, width: 220, height: 40, right: 820, bottom: 440 });
+  elR.fire('dragstart', fakeEvent(elR, 0));
+  dropAt(canvas, 100, 145); // 底缘吸附回 when_start 正下方 → 组形成
+
+  // 拖 when_start 到 (200, 200)：lock_set 应同步移动到 (200, 240)
+  setRect(hatEntry.uid, 40, 100, 220, 40);
+  setRect(lockEntry.uid, 40, 140, 220, 40); // 吸附后的组内位置
+  applyRects();
+  const elH = foundInCanvas(hatEntry.uid);
+  elH.fire('dragstart', fakeEvent(elH, 0));
+  dropAt(canvas, 200, 200);
+}
+check('整体联动：首块移动后相连积木同步移动',
+  (function () {
+    // 期望：hat pos {x:200,y:200}，lock pos {x:200,y:240}
+    return !!(hatEntry && lockEntry && hatEntry.pos && lockEntry.pos &&
+      hatEntry.pos.x === 200 && hatEntry.pos.y === 200 &&
+      lockEntry.pos.x === 200 && lockEntry.pos.y === 240);
+  })(), true);
 
 console.log(failed ? '\n' + failed + ' 项失败' : '\n全部通过');
 if (failed) process.exitCode = 1;

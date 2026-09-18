@@ -864,7 +864,7 @@ body { animation: page-in 600ms ease-out both; }
 
 @keyframes drop-land {
   0% { transform: scale(.92) translateY(4px); }
-  55% { transform: scale(1.05) translateY(0); }
+  55% { transform: scale(1.06) translateY(0); }
   100% { transform: scale(1) translateY(0); }
 }
 @keyframes drop-ripple {
@@ -876,14 +876,14 @@ body { animation: page-in 600ms ease-out both; }
   100% { box-shadow: 0 0 0 12px rgba(61, 220, 151, 0); }
 }
 @keyframes connect-flash {
-  0% { box-shadow: 0 0 0 2px rgba(74, 163, 223, .55); }
-  100% { box-shadow: 0 0 0 8px rgba(74, 163, 223, 0); }
+  0% { box-shadow: 0 0 0 2px rgba(255, 159, 67, .6); }
+  100% { box-shadow: 0 0 0 10px rgba(255, 159, 67, 0); }
 }
 @keyframes place-note {
-  0% { opacity: 0; transform: translateY(4px); }
-  20% { opacity: 1; transform: translateY(0); }
-  75% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-8px); }
+  0% { opacity: 0; transform: translate(-50%, -140%) translateY(4px); }
+  20% { opacity: 1; transform: translate(-50%, -140%) translateY(0); }
+  75% { opacity: 1; transform: translate(-50%, -140%) translateY(0); }
+  100% { opacity: 0; transform: translate(-50%, -140%) translateY(-8px); }
 }
 
 /* 1. 拖拽态：积木轻微旋转 + 拖影感（半透明）+ 阴影变大模糊 */
@@ -905,11 +905,11 @@ body.dragging .palette-blk { opacity: .45; }
   transition: opacity .15s ease, width .15s ease, height .15s ease;
 }
 #snap-ring.on { opacity: 1; }
-#snap-ring.hot { width: 34px; height: 34px; border-color: rgba(74, 163, 223, .7); box-shadow: 0 0 16px rgba(74, 163, 223, .4); }
+#snap-ring.hot { width: 34px; height: 34px; border-color: rgba(255, 159, 67, .85); box-shadow: 0 0 18px rgba(255, 159, 67, .45); }
 
-/* 2. 预吸附：靠近时网格局部变亮（画布容器级微亮），槽位浅蓝提示框 */
+/* 2. 预吸附：靠近时网格局部变亮（画布容器级微亮），槽位浅橙提示框 */
 .canvas.snap-near { background-color: color-mix(in srgb, var(--bg-3) 92%, var(--accent) 8%); }
-.slot.cond-slot.snap-slot, .list.snap-slot { border-color: #4aa3df; background: rgba(74, 163, 223, .12); }
+.slot.cond-slot.snap-slot, .list.snap-slot { border-color: var(--accent); background: rgba(255, 159, 67, .14); }
 
 /* 3. 放置瞬间：快速下沉 + 轻微弹性回弹，180ms ease-out-back */
 .blk.drop-land .blk-head { animation: drop-land 180ms cubic-bezier(.34, 1.3, .64, 1) both; }
@@ -929,19 +929,24 @@ body.dragging .palette-blk { opacity: .45; }
   position: absolute;
   padding: 3px 9px;
   border-radius: 8px;
-  background: rgba(28, 38, 54, .82);
-  color: #fff;
+  background: transparent;
+  color: #1d2531;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .65);
   pointer-events: none;
   z-index: 60;
   transform: translate(-50%, -140%);
   animation: place-note 900ms ease-out both;
   white-space: nowrap;
 }
+.place-note[data-type="connected"] { color: var(--accent); }
+/* 深色主题：深色透明底 + 白/橙字 */
+html[data-theme="dark"] .place-note { background: rgba(10, 14, 20, .72); color: #fff; text-shadow: none; }
+html[data-theme="dark"] .place-note[data-type="connected"] { color: var(--accent); }
 
-/* 5. 连接反馈：槽位/列表短暂蓝色连线光效（磁吸贴合由回弹+高光承担） */
-.slot.connect-flash, .list.connect-flash { animation: connect-flash 520ms ease-out both; }
+/* 5. 连接反馈：成功对接（上方接入或下方拼接）→ 橙色微光脉冲 */
+.slot.connect-flash, .list.connect-flash, .blk.connect-flash .blk-head { animation: connect-flash 520ms ease-out both; }
 
 /* 减弱动效：放置系动画一并禁用 */
 @media (prefers-reduced-motion: reduce) {
