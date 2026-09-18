@@ -482,6 +482,7 @@
     var freePos = null;
     var snapIdx = -1;
     var snapBefore = false;
+    var pendingTopSnap = null;
     if (tgt.listEl === null || tgt.listEl === rootEl) {
       var cr = rootEl.getBoundingClientRect();
       var px = Math.round(e.clientX - cr.left + (rootEl.scrollLeft || 0));
@@ -491,7 +492,14 @@
         freePos = { x: Math.round(snap.x - cr.left + (rootEl.scrollLeft || 0)), y: Math.round(snap.y - cr.top + (rootEl.scrollTop || 0)) };
         snapIdx = indexOfUid(state.root, snap.uid); // 底缘：插到吸附块之后；顶缘：插到它之前
         snapBefore = snap.edge === 'top';
-        if (snapBefore) freePos.y = Math.max(0, freePos.y - 0); // y 已是吸附块顶缘，插入后渲染自然上移
+        if (snapBefore) {
+          /* 顶缘吸附：新块底部贴住目标块顶部（按被拖积木实际高度上移），
+           * 避免压在目标块上（看起来在下方） */
+          var dragEl0 = !dragInfo.fromPalette && rootBlockEls && rootBlockEls[dragInfo.uid];
+          var dragH = (dragEl0 && dragEl0.getBoundingClientRect) ? dragEl0.getBoundingClientRect().height : 34;
+          if (isFinite(dragH) && dragH > 0) freePos.y = Math.max(0, freePos.y - Math.round(dragH));
+          else pendingTopSnap = snap; // 高度未知（面板拖出）：渲染后修正
+        }
       } else if (isFinite(px) && isFinite(py)) {
         freePos = { x: px, y: py };
       }
@@ -525,19 +533,14 @@
       if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < idx) idx -= 1;
       if (freePos) {
         b.pos = freePos;
+        /* 先插首块，再把组内其余块按原相对顺序插到首块之后（顺序不能反，否则首块会被插到组内块之后） */
+        tgt.arr.splice(idx, 0, b);
         /* 整体联动：组内相连积木按相对偏移同步移动，保持连接结构不变 */
-        (dragInfo.group || []).forEach(function (g) {
-          if (g.uid === b.uid) return;
-          var ge = registry[g.uid];
-          if (!ge || !ge.block) return;
-          ge.block.pos = { x: freePos.x + g.dx, y: freePos.y + g.dy };
-          /* 组内块也插入到同一执行链（保持相对顺序） */
-        });
-        /* 把组内其余块按原相对顺序插到首块之后 */
         var groupRest = (dragInfo.group || []).filter(function (g) { return g.uid !== b.uid; });
         groupRest.forEach(function (g, gi) {
           var ge = registry[g.uid];
           if (!ge || !ge.block) return;
+          ge.block.pos = { x: freePos.x + g.dx, y: freePos.y + g.dy };
           var oldG = ge.container && ge.container.kind === 'list' ? ge.container.list.indexOf(ge.block) : -1;
           if (oldG >= 0) ge.container.list.splice(oldG, 1);
           tgt.arr.splice(idx + 1 + gi, 0, ge.block);
@@ -548,6 +551,24 @@
     }
     refreshVarList();
     renderRoot();
+    /* 顶缘吸附块高修正（仅面板拖出、高度未知的情形）：渲染后按实际块高重设 y */
+    if (pendingTopSnap && placedUidOut && dragInfo && dragInfo.fromPalette) {
+      var pe = rootBlockEls && rootBlockEls[placedUidOut];
+      var te = rootBlockEls && rootBlockEls[pendingTopSnap.uid];
+      if (pe && pe.getBoundingClientRect && te && te.getBoundingClientRect) {
+        var pr = pe.getBoundingClientRect();
+        var tr = te.getBoundingClientRect();
+        var cr2 = rootEl.getBoundingClientRect();
+        var pb = registry && registry[placedUidOut] && registry[placedUidOut].block;
+        if (pb && isFinite(pr.height) && pr.height > 0) {
+          pb.pos = {
+            x: Math.round(tr.left - cr2.left + (rootEl.scrollLeft || 0)),
+            y: Math.round(tr.top - pr.height - cr2.top + (rootEl.scrollTop || 0))
+          };
+          renderRoot();
+        }
+      }
+    }
     finishDrag();
     return placedUidOut;
   }
@@ -696,6 +717,7 @@
   }
 
   /* 放置瞬间：下沉回弹 + 落点光环/波纹 + 绿色确认光晕 + 轻量文字浮层；
+   * 浮层出现在接缝侧边（积木右侧），不与积木重合；
    * 连接到已有积木时槽位/列表额外闪蓝色连线光效。 */
   function playPlaceEffects(el, x, y, note, connectedTarget) {
     if (!el || typeof document.createElement !== 'function') return;
@@ -704,6 +726,10 @@
       setTimeout(function () { if (el._classes) el._classes.delete('drop-land'); }, 900);
     }
     var canvasRect = rootEl && rootEl.getBoundingClientRect ? rootEl.getBoundingClientRect() : { left: 0, top: 0 };
+    var elRect = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: x, top: y, right: x, height: 0 };
+    /* 浮层定位：接缝侧边（积木右侧 12px），垂直居中于接缝 */
+    var nx = (elRect.right || x) - canvasRect.left + 12;
+    var ny = (elRect.top || y) + (elRect.height || 0) / 2 - canvasRect.top;
     var lx = x - canvasRect.left, ly = y - canvasRect.top;
     if (rootEl && rootEl.appendChild) {
       var ripple = document.createElement('div');
@@ -718,8 +744,8 @@
       n.className = 'place-note';
       n.textContent = note;
       if (connectedTarget && n.setAttribute) n.setAttribute('data-type', 'connected');
-      n.style.left = lx + 'px';
-      n.style.top = ly + 'px';
+      n.style.left = nx + 'px';
+      n.style.top = ny + 'px';
       if (rootEl && rootEl.appendChild) rootEl.appendChild(n);
       setTimeout(function () { if (n.parentNode && n.parentNode.removeChild) n.parentNode.removeChild(n); }, 950);
     }

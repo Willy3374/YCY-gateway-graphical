@@ -311,8 +311,8 @@ if (hatEntry && lockEntry) {
   elT.fire('dragstart', fakeEvent(elT, 0));
   dropAt(canvas, 100, 95); // 顶缘 100 的 5px 内 → 顶缘吸附
 }
-check('顶缘吸附：落点在某块顶缘附近 → pos 对齐该块正上方',
-  lockEntry && lockEntry.pos, { x: 40, y: 100 });
+check('顶缘吸附：落点在某块顶缘附近 → 新块底部贴住目标块顶部（不重叠）',
+  lockEntry && lockEntry.pos, { x: 40, y: 60 });
 check('顶缘吸附：插入到吸附块之前（同一执行链）',
   hatEntry && ws.state.root[ws.state.root.indexOf(hatEntry) - 1] === lockEntry, true);
 
