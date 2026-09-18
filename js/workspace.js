@@ -443,7 +443,8 @@
   }
 
   function handleDrop(e) {
-    if (!dragInfo) return;
+    if (!dragInfo) return null;
+    var placedUidOut = null;
     var tgt = resolveTarget(e);
     if (!tgt) { clearHint(); return; }
     e.preventDefault();
@@ -490,6 +491,7 @@
       var nb = newBlock(dragInfo.op);
       if (freePos) nb.pos = freePos;
       tgt.arr.splice(snapIdx >= 0 ? snapIdx + 1 : ins.idx, 0, nb);
+      placedUidOut = nb.uid;
     } else {
       var entry2 = registry[dragInfo.uid];
       var b = entry2.block;
@@ -515,10 +517,12 @@
       if (freePos) b.pos = freePos;
       else delete b.pos;
       tgt.arr.splice(idx, 0, b);
+      placedUidOut = b.uid;
     }
     refreshVarList();
     renderRoot();
     finishDrag();
+    return placedUidOut;
   }
 
   function inListSubtree(block, arr) {
@@ -593,6 +597,89 @@
     dragInfo = null;
     document.body.classList.remove('dragging');
     clearHint();
+    hideSnapRing();
+  }
+
+  /* ---------- 积木放置动效 ----------
+   * 拖拽倾斜、跟随指针的吸附光圈、落下回弹、落点光环/波纹、连接反馈、确认浮层。
+   * 只动 transform/opacity/box-shadow，60fps；prefers-reduced-motion 下全量降级。
+   */
+  var ringEl = null;
+
+  function ensureRing() {
+    if (ringEl || typeof document.createElement !== 'function') return ringEl;
+    ringEl = document.createElement('div');
+    ringEl.id = 'snap-ring';
+    if (document.body && document.body.appendChild) document.body.appendChild(ringEl);
+    return ringEl;
+  }
+
+  function moveRing(x, y) {
+    var r = ensureRing();
+    if (!r || !r.style) return;
+    r.style.left = x + 'px';
+    r.style.top = y + 'px';
+    if (r._classes) r._classes.add('on');
+  }
+
+  function setRingHot(hot) {
+    var r = ensureRing();
+    if (!r || !r._classes) return;
+    if (hot) r._classes.add('hot'); else r._classes.delete('hot');
+  }
+
+  function hideSnapRing() {
+    if (!ringEl || !ringEl._classes) return;
+    ringEl._classes.delete('on');
+    ringEl._classes.delete('hot');
+  }
+
+  /* 拖拽经过时：积木轻微倾斜 + 光圈跟随指针；靠近吸附目标时光圈变蓝变大 */
+  function handleDragMove(e) {
+    if (!dragInfo || typeof e.clientX !== 'number') return;
+    moveRing(e.clientX, e.clientY);
+    var near = (typeof findSnapTarget === 'function') ? findSnapTarget(e.clientX, e.clientY) : null;
+    setRingHot(!!near);
+    var dragged = dragInfo.fromPalette ? null : (registry[dragInfo.uid] && registry[dragInfo.uid].el);
+    if (dragged && dragged._classes && !dragged._classes.has('drag-tilt')) dragged._classes.add('drag-tilt');
+  }
+
+  function clearDragVisuals(draggedEl) {
+    if (draggedEl && draggedEl._classes) draggedEl._classes.delete('drag-tilt');
+    hideSnapRing();
+  }
+
+  /* 放置瞬间：下沉回弹 + 落点光环/波纹 + 绿色确认光晕 + 轻量文字浮层；
+   * 连接到已有积木时槽位/列表额外闪蓝色连线光效。 */
+  function playPlaceEffects(el, x, y, note, connectedTarget) {
+    if (!el || typeof document.createElement !== 'function') return;
+    if (el._classes) {
+      el._classes.add('drop-land');
+      setTimeout(function () { if (el._classes) el._classes.delete('drop-land'); }, 900);
+    }
+    var canvasRect = rootEl && rootEl.getBoundingClientRect ? rootEl.getBoundingClientRect() : { left: 0, top: 0 };
+    var lx = x - canvasRect.left, ly = y - canvasRect.top;
+    if (rootEl && rootEl.appendChild) {
+      var ripple = document.createElement('div');
+      ripple.className = 'drop-ripple';
+      ripple.style.left = lx + 'px';
+      ripple.style.top = ly + 'px';
+      rootEl.appendChild(ripple);
+      setTimeout(function () { if (ripple.parentNode && ripple.parentNode.removeChild) ripple.parentNode.removeChild(ripple); }, 700);
+    }
+    if (note) {
+      var n = document.createElement('div');
+      n.className = 'place-note';
+      n.textContent = note;
+      n.style.left = lx + 'px';
+      n.style.top = ly + 'px';
+      if (rootEl && rootEl.appendChild) rootEl.appendChild(n);
+      setTimeout(function () { if (n.parentNode && n.parentNode.removeChild) n.parentNode.removeChild(n); }, 950);
+    }
+    if (connectedTarget && connectedTarget._classes) {
+      connectedTarget._classes.add('connect-flash');
+      setTimeout(function () { if (connectedTarget._classes) connectedTarget._classes.delete('connect-flash'); }, 600);
+    }
   }
 
   /* ---------- 导入 / 导出辅助 ---------- */
@@ -828,6 +915,7 @@
     document.addEventListener('dragstart', handleDragStart);
     document.addEventListener('dragover', function (e) {
       if (!dragInfo) return;
+      handleDragMove(e); // 光圈跟随指针 + 拖拽倾斜 + 预吸附状态
       if (rootEl.contains(e.target) || e.target === rootEl) handleDragOver(e);
       else if (!dragInfo.fromPalette && isOverPalette(e)) {
         /* 拖到工具箱上方：允许 drop，高亮提示删除 */
@@ -848,7 +936,21 @@
         return;
       }
       if (!rootEl.contains(e.target) && e.target !== rootEl) { e.preventDefault(); finishDrag(); return; }
-      handleDrop(e);
+      /* 记录释放坐标，供放置动效（回弹/光环/浮层）定位 */
+      var dropX = e.clientX, dropY = e.clientY;
+      var snapUid = null;
+      if (typeof findSnapTarget === 'function') {
+        var st = findSnapTarget(dropX, dropY);
+        if (st) snapUid = st.uid;
+      }
+      var placedUid = handleDrop(e);
+      /* 放置完成：找到新位置的元素，播放动效 */
+      var placedEl = (placedUid && rootBlockEls[placedUid]) ? rootBlockEls[placedUid] : null;
+      if (placedEl) {
+        var connected = null;
+        if (snapUid && snapUid !== placedUid && rootBlockEls[snapUid]) connected = rootBlockEls[snapUid];
+        playPlaceEffects(placedEl, dropX, dropY, connected ? '已连接' : '已放置', connected);
+      }
     });
     document.addEventListener('dragend', finishDrag);
 
