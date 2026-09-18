@@ -746,9 +746,15 @@
     }
     var canvasRect = rootEl && rootEl.getBoundingClientRect ? rootEl.getBoundingClientRect() : { left: 0, top: 0 };
     var elRect = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: x, top: y, right: x, height: 0 };
-    /* 浮层定位：接缝侧边（积木右侧 12px），垂直居中于接缝 */
-    var nx = (elRect.right || x) - canvasRect.left + 12;
-    var ny = (elRect.top || y) + (elRect.height || 0) / 2 - canvasRect.top;
+    var ctRect = connectedTarget && connectedTarget.getBoundingClientRect ? connectedTarget.getBoundingClientRect() : null;
+    /* 浮层锚定在接缝右侧：接缝=固定积木与被移动积木的连接线。
+     * x=接缝处积木右缘 + 12px，y=接缝线（固定块与被移动块的交界）。 */
+    var anchorRect = ctRect || elRect;
+    var nx = (anchorRect.right || x) - canvasRect.left + 12;
+    var seamY = ctRect && elRect
+      ? (elRect.top < ctRect.top ? ctRect.top : ctRect.bottom) // 上方接入→接缝=固定块顶缘；下方拼接→固定块底缘
+      : ((elRect.top || y) + (elRect.height || 0) / 2);
+    var ny = seamY - canvasRect.top;
     var lx = x - canvasRect.left, ly = y - canvasRect.top;
     if (rootEl && rootEl.appendChild) {
       var ripple = document.createElement('div');
