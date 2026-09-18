@@ -95,7 +95,7 @@ body {
   margin: 0;
   font-family: var(--font);
   color: var(--text);
-  background: radial-gradient(1200px 600px at 20% -10%, var(--bg-1) 0%, var(--bg-3) 60%);
+  background: var(--bg-3);
   overflow: hidden;
   transition: background .2s ease, color .2s ease;
 }
@@ -169,26 +169,29 @@ html[data-theme="dark"] .logo-swap .logo-dark { display: block; }
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
-  transition: .15s;
+  transition: border-color .15s, background .15s, color .15s;
 }
-.btn:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.btn:hover { border-color: var(--line-strong); background: var(--panel-2); }
 .btn.primary {
-  background: linear-gradient(180deg, var(--accent), var(--accent-line));
+  background: var(--accent);
   border-color: var(--accent-line);
   color: var(--accent-ink);
   font-weight: 700;
 }
+.btn.primary:hover { background: var(--accent-line); }
 .btn.danger { color: var(--danger); }
-.btn.ghost { background: var(--panel-2); }
+.btn.ghost { background: transparent; }
 
-/* 「开始」：与「生成」区分开的行动按钮 */
+/* 「开始」：唯一 Green 行动色，实色不渐变；与主橙形成双焦点？不 ——
+   生成是高频主操作（橙），开始是状态门槛（绿、实色、无 hover 位移），
+   视线顺序由饱和度与面积自然分层。 */
 .btn.go {
-  background: linear-gradient(180deg, #3ddc97, #22b477);
-  border-color: #1c9a66;
-  color: #06251a;
+  background: #2bb47c;
+  border-color: #229a68;
+  color: #ffffff;
   font-weight: 700;
 }
-.btn.go:hover { border-color: #178055; }
+.btn.go:hover { background: #24a06c; }
 
 /* 提示条（未连接到网关等占位信息） */
 .notice {
@@ -741,4 +744,115 @@ body.dragging .palette-blk { cursor: grabbing; }
   .brand .sub { display: none; }
   .palette { width: 260px; min-width: 260px; }
   .theme-switch button span { display: none; }
+}
+
+/* ============================================================
+   页面载入动画 — 丝滑柔和、低饱和光影、60fps（只动 transform/opacity）
+   五区编排：容器淡入 → 顶栏下滑 → 左侧滑入+积木弹出 → 画布网格逐行 → 右侧滑入
+   ============================================================ */
+
+@keyframes page-in {
+  from { opacity: 0; transform: scale(.96); }
+  60% { opacity: 1; }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes blk-pop {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes grid-line-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes hint-float-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes breathe-in {
+  0% { opacity: 0; transform: scale(.8); }
+  60% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes btn-pop {
+  0% { opacity: 0; transform: scale(.92); }
+  65% { opacity: 1; transform: scale(1.03); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes sheen-sweep {
+  from { transform: translateX(-120%) skewX(-18deg); }
+  to { transform: translateX(260%) skewX(-18deg); }
+}
+
+/* 1. 页面容器：透明淡入 + 弹性缩放 0.96→1，600ms ease-out 无抖动 */
+body { animation: page-in 600ms ease-out both; }
+
+/* 2. 顶栏：从上滑入，元素 stagger 80ms（logo → 标题 → 切换 → 按钮组），文字淡入 */
+.topbar { animation: slide-down 480ms ease-out both; }
+.topbar .logo-swap { animation: slide-down 480ms ease-out both; animation-delay: 80ms; }
+.topbar .brand .title { animation: slide-down 480ms ease-out both, page-in 300ms ease-out both; animation-delay: 160ms, 160ms; }
+.topbar .theme-switch { animation: slide-down 480ms ease-out both; animation-delay: 240ms; }
+.topbar .tools > * { animation: slide-down 480ms ease-out both; }
+.topbar .tools > .count { animation-delay: 320ms; }
+.topbar .tools > .theme-switch ~ .btn,
+.topbar .tools > .file-btn { animation-delay: 400ms; }
+.topbar .tools > .btn-primary,
+.topbar .tools > .primary,
+.topbar .tools > .go { animation: btn-pop 520ms cubic-bezier(.34,1.56,.64,1) both; animation-delay: 640ms; }
+
+/* 3. 左侧积木面板：滑入；积木块依次弹出（上浮+渐显，stagger 40ms） */
+.palette { animation: slide-in-left 520ms ease-out both; animation-delay: 160ms; }
+.palette .pal-title { animation: slide-in-left 420ms ease-out both; animation-delay: 320ms; }
+.palette .pal-body .blk {
+  animation: blk-pop 460ms ease-out both;
+}
+.palette .pal-body .blk:nth-child(1) { animation-delay: 360ms; }
+.palette .pal-body .blk:nth-child(2) { animation-delay: 400ms; }
+.palette .pal-body .blk:nth-child(3) { animation-delay: 440ms; }
+.palette .pal-body .blk:nth-child(4) { animation-delay: 480ms; }
+.palette .pal-body .blk:nth-child(5) { animation-delay: 520ms; }
+.palette .pal-body .blk:nth-child(6) { animation-delay: 560ms; }
+.palette .pal-body .blk:nth-child(7) { animation-delay: 600ms; }
+.palette .pal-body .blk:nth-child(8) { animation-delay: 640ms; }
+.palette .pal-body .blk:nth-child(n+9) { animation-delay: 680ms; }
+
+/* 4. 画布：网格逐行淡入（背景层 opacity 过渡），提示文字延迟浮现 */
+.canvas { animation: grid-line-in 900ms ease-out both; animation-delay: 400ms; }
+.canvas-head .hint { animation: hint-float-in 520ms ease-out both; animation-delay: 760ms; }
+
+/* 5. 右侧设备面板：滑入；未连接状态圆圈呼吸淡入 */
+.device-panel { animation: slide-in-right 520ms ease-out both; animation-delay: 280ms; }
+.device-panel .device-dot { animation: breathe-in 700ms ease-out both; animation-delay: 640ms; }
+
+/* 6. 生成/开始：最后弹性弹出；开始按钮高光扫光（一次性，低饱和） */
+#btn-run, #btn-start { animation: btn-pop 560ms cubic-bezier(.34,1.56,.64,1) both; animation-delay: 860ms; position: relative; overflow: hidden; }
+#btn-run::after, #btn-start::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 40%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+  transform: translateX(-120%) skewX(-18deg);
+  animation: sheen-sweep 900ms ease-out 1500ms 1 both;
+  pointer-events: none;
+}
+
+/* 尊重系统减弱动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  body, .topbar, .topbar *, .palette, .palette *, .canvas, .canvas-head .hint,
+  .device-panel, .device-panel *, #btn-run, #btn-start {
+    animation: none !important;
+  }
+  #btn-run::after, #btn-start::after { display: none; }
 }
