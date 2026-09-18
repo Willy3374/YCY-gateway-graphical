@@ -529,24 +529,37 @@
         }
       }
       detach(entry2);
-      var idx = snapIdx >= 0 ? (snapBefore ? snapIdx : snapIdx + 1) : ins.idx;
-      if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < idx) idx -= 1;
+      /* 统一索引修正：refIdx 是移除前坐标系里的插入点，
+       * 统计「移除点在 refIdx 之前」的数量后一次修正，避免多重修正叠加错位 */
+      var refIdx = snapIdx >= 0 ? (snapBefore ? snapIdx : snapIdx + 1) : ins.idx;
+      var removedBefore = 0;
+      if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < refIdx) removedBefore++;
+      var groupRest = (dragInfo.group || []).filter(function (g) { return g.uid !== b.uid; });
+      groupRest.forEach(function (g) {
+        var ge = registry[g.uid];
+        if (!ge || !ge.block) return;
+        var l = ge.container && ge.container.kind === 'list' ? ge.container.list : null;
+        if (!l) return;
+        var oi = l.indexOf(ge.block);
+        if (oi < 0) return;
+        l.splice(oi, 1);
+        if (l === tgt.arr && oi < refIdx) removedBefore++;
+        if (freePos) ge.block.pos = { x: freePos.x + g.dx, y: freePos.y + g.dy };
+      });
+      var idx = refIdx - removedBefore;
       if (freePos) {
         b.pos = freePos;
-        /* 先插首块，再把组内其余块按原相对顺序插到首块之后（顺序不能反，否则首块会被插到组内块之后） */
+        /* 先插首块，再按原相对顺序插组内块，保持组相邻与执行链顺序 */
         tgt.arr.splice(idx, 0, b);
-        /* 整体联动：组内相连积木按相对偏移同步移动，保持连接结构不变 */
-        var groupRest = (dragInfo.group || []).filter(function (g) { return g.uid !== b.uid; });
         groupRest.forEach(function (g, gi) {
           var ge = registry[g.uid];
           if (!ge || !ge.block) return;
-          ge.block.pos = { x: freePos.x + g.dx, y: freePos.y + g.dy };
-          var oldG = ge.container && ge.container.kind === 'list' ? ge.container.list.indexOf(ge.block) : -1;
-          if (oldG >= 0) ge.container.list.splice(oldG, 1);
           tgt.arr.splice(idx + 1 + gi, 0, ge.block);
         });
-      } else delete b.pos;
-      tgt.arr.splice(idx, 0, b);
+      } else {
+        delete b.pos;
+        tgt.arr.splice(idx, 0, b);
+      }
       placedUidOut = b.uid;
     }
     refreshVarList();
@@ -598,20 +611,26 @@
   }
 
   /* 整体联动拖拽：拖拽某块时，其下方串联绑定（吸附对齐）的相连积木作为整体同步移动。
-   * 判定：顶层根列表中，紧随其后的块 pos.x 与前一块相同且 y 递增（吸附拼接的结果），
-   * 这些块构成一个组，保持相对位置随首块同步移动。
-   * 返回 [{ uid, dx, dy }]（相对首块旧 pos 的偏移，首块为 0,0）。 */
+   * 判定：按空间链跟随——从首块 pos 出发，反复找 x 对齐且 y 紧邻其下的下一块
+   * （不要求 root 数组相邻，中间可隔着其他位置的块），构成保持相对位置的组。 */
   function computeDragGroup(head) {
-    var idx = indexOfUid(state.root, head.uid);
-    if (idx < 0 || !head.pos) return [{ uid: head.uid, dx: 0, dy: 0 }];
+    if (!head.pos) return [{ uid: head.uid, dx: 0, dy: 0 }];
     var group = [{ uid: head.uid, dx: 0, dy: 0 }];
+    var taken = {};
+    taken[head.uid] = 1;
     var prev = head.pos;
-    for (var j = idx + 1; j < state.root.length; j++) {
-      var n = state.root[j];
-      if (!n.pos) break; // 无 pos（顺排块）不属于自由拼接组
-      if (Math.abs(n.pos.x - prev.x) > 1 || n.pos.y <= prev.y) break; // x 对齐且 y 递增才视为相连
-      group.push({ uid: n.uid, dx: n.pos.x - head.pos.x, dy: n.pos.y - head.pos.y });
-      prev = n.pos;
+    for (;;) {
+      var next = null, nextDist = 400; // y 间隙上限：吸附拼接的块紧贴，留余量容纳高块
+      state.root.forEach(function (n) {
+        if (!n.pos || taken[n.uid]) return;
+        if (Math.abs(n.pos.x - prev.x) > 1 || n.pos.y <= prev.y) return;
+        var gap = n.pos.y - prev.y;
+        if (gap < nextDist) { nextDist = gap; next = n; }
+      });
+      if (!next) break;
+      taken[next.uid] = 1;
+      group.push({ uid: next.uid, dx: next.pos.x - head.pos.x, dy: next.pos.y - head.pos.y });
+      prev = next.pos;
     }
     return group;
   }

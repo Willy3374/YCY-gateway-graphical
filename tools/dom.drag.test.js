@@ -301,6 +301,18 @@ if (lockEntry) {
 }
 check('远离块底部 → 自由摆放', lockEntry && lockEntry.pos, { x: 600, y: 500 });
 
+/* ---------- 回归：拖动画布积木不得复制（自由摆放路径只插入一次） ---------- */
+if (lockEntry) {
+  const before = ws.state.root.length;
+  const uidsBefore = ws.state.root.map((b) => b.uid);
+  const elD = foundInCanvas(lockEntry.uid);
+  elD.fire('dragstart', fakeEvent(elD, 0));
+  dropAt(canvas, 300, 400);
+  const uidsAfter = ws.state.root.map((b) => b.uid);
+  check('拖动不复制：块数不变', ws.state.root.length, before);
+  check('拖动不复制：uid 无重复', new Set(uidsAfter).size === uidsAfter.length && uidsAfter.length === uidsBefore.length, true);
+}
+
 /* ---------- 上方接入：拖到某块顶缘附近 → 插到它之前（向上对接） ---------- */
 if (hatEntry && lockEntry) {
   // 重置位置：when_start 在 (40,100)（顶缘 100），lock_set 拖到其顶缘上方 (100, 95)
@@ -328,8 +340,12 @@ if (hatEntry && lockEntry) {
   dropAt(canvas, 100, 145); // 底缘吸附回 when_start 正下方 → 组形成
 
   // 拖 when_start 到 (200, 200)：lock_set 应同步移动到 (200, 240)
+  // 注：造组拖 lock 时组逻辑会正确地带走下方相邻的 hat（hat 被同步移到 {40,180}），
+  // 故此处显式重置两块 pos，模拮“已拼好的组”状态
   setRect(hatEntry.uid, 40, 100, 220, 40);
   setRect(lockEntry.uid, 40, 140, 220, 40); // 吸附后的组内位置
+  hatEntry.pos = { x: 40, y: 100 };
+  lockEntry.pos = { x: 40, y: 140 };
   applyRects();
   const elH = foundInCanvas(hatEntry.uid);
   elH.fire('dragstart', fakeEvent(elH, 0));
@@ -338,9 +354,11 @@ if (hatEntry && lockEntry) {
 check('整体联动：首块移动后相连积木同步移动',
   (function () {
     // 期望：hat pos {x:200,y:200}，lock pos {x:200,y:240}
-    return !!(hatEntry && lockEntry && hatEntry.pos && lockEntry.pos &&
+    const ok = !!(hatEntry && lockEntry && hatEntry.pos && lockEntry.pos &&
       hatEntry.pos.x === 200 && hatEntry.pos.y === 200 &&
       lockEntry.pos.x === 200 && lockEntry.pos.y === 240);
+    if (!ok) console.log('      [debug] hat pos', JSON.stringify(hatEntry && hatEntry.pos), 'lock pos', JSON.stringify(lockEntry && lockEntry.pos), 'root', ws.state.root.map((b) => b.op));
+    return ok;
   })(), true);
 
 console.log(failed ? '\n' + failed + ' 项失败' : '\n全部通过');
