@@ -57,19 +57,19 @@
     inputs: [num('ID', 1), en('CH', 'A', ['A', 'B']), num('N', 0)]
   });
   def({ op: 'tens_all_off', cat: 'device_tens', kind: 'stack', label: '电击器 @ID 全部关闭', inputs: [num('ID', 1)] });
+  def({ op: 'tens_motor_set', cat: 'device_tens', kind: 'stack', label: '将电击器 @ID 马达设为 @CH', inputs: [num('ID', 1), en('CH', '开', ['开', '关', '预设1', '预设2', '预设3'])] });
 
   /* ===== 设备 · 灌肠机 ===== */
-  def({ op: 'enema_expand', cat: 'device_enema', kind: 'stack', label: '灌肠机 @ID 膨胀/缩小到 @N 厘米', inputs: [num('ID', 1), num('N', 0)] });
+  def({ op: 'enema_expand', cat: 'device_enema', kind: 'stack', label: '灌肠机 @ID 膨胀 @N 秒', inputs: [num('ID', 1), num('N', 1)] });
+  def({ op: 'enema_reduce', cat: 'device_enema', kind: 'stack', label: '灌肠机 @ID 收缩 @N 秒', inputs: [num('ID', 1), num('N', 1)] });
   def({ op: 'enema_pause', cat: 'device_enema', kind: 'stack', label: '灌肠机 @ID 暂停', inputs: [num('ID', 1)] });
   def({ op: 'enema_run', cat: 'device_enema', kind: 'stack', label: '灌肠机 @ID 灌肠', inputs: [num('ID', 1)] });
 
   /* ===== 设备 · 跳蛋 ===== */
   def({ op: 'vibe_a_intensity', cat: 'device_vibe_a', kind: 'stack', label: '将跳蛋 @ID 强度设为 @N', inputs: [num('ID', 1), num('N', 0)] });
-  def({ op: 'vibe_a_frequency', cat: 'device_vibe_a', kind: 'stack', label: '将跳蛋 @ID 频率设为 @N', inputs: [num('ID', 1), num('N', 0)] });
 
   /* ===== 设备 · 榨精机 ===== */
   def({ op: 'vibe_b_intensity', cat: 'device_vibe_b', kind: 'stack', label: '将榨精机 @ID 强度设为 @N', inputs: [num('ID', 1), num('N', 0)] });
-  def({ op: 'vibe_b_frequency', cat: 'device_vibe_b', kind: 'stack', label: '将榨精机 @ID 频率设为 @N', inputs: [num('ID', 1), num('N', 0)] });
 
   /* ===== 运算（返回 number） ===== */
   var A0 = num('A', 0), B0 = num('B', 0);
@@ -101,9 +101,16 @@
 
   /* ===== 设备状态值 ===== */
   def({ op: 'lock_state', cat: 'value', kind: 'reporter', ret: 'number', label: '智能锁 @ID 的状态（开锁0/闭锁1）', inputs: [num('ID', 1)] });
-  def({ op: 'tens_omega', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 的角速度', inputs: [num('ID', 1)] });
-  def({ op: 'tens_alpha', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 的加速度', inputs: [num('ID', 1)] });
+  def({ op: 'tens_omega', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 的最大角速度', inputs: [num('ID', 1)] });
+  def({ op: 'tens_alpha', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 的最大加速度', inputs: [num('ID', 1)] });
   def({ op: 'tens_angle', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 的角度', inputs: [num('ID', 1)] });
+  def({ op: 'tens_connection_status', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 通道 @CH 的连接状态（0未连接;1已连接）', inputs: [num('ID', 1), en('CH', 'A', ['A', 'B'])] });
+  def({ op: 'tens_step', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 的计步数据', inputs: [num('ID', 1)] });
+  def({ op: 'tens_power', cat: 'value', kind: 'reporter', ret: 'number', label: '电击器 @ID 的电量', inputs: [num('ID', 1)] });
+  def({ op: 'vibe_a_power', cat: 'value', kind: 'reporter', ret: 'number', label: '跳蛋 @ID 的电量', inputs: [num('ID', 1)] });
+  def({ op: 'vibe_b_power', cat: 'value', kind: 'reporter', ret: 'number', label: '榨精机 @ID 的电量', inputs: [num('ID', 1)] });
+  def({ op: 'enema_pressure', cat: 'value', kind: 'reporter', ret: 'number', label: '灌肠机 @ID 的压力值', inputs: [num('ID', 1)] });
+  def({ op: 'enema_power', cat: 'value', kind: 'reporter', ret: 'number', label: '灌肠机 @ID 的电量', inputs: [num('ID', 1)] });
 
   /* ---------- 索引 ---------- */
   GP.DEF_MAP = {};

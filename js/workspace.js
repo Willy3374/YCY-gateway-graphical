@@ -429,6 +429,8 @@
    */
   var SNAP_DIST = 14;
 
+  /* 指针落在某块顶缘或底缘 SNAP_DIST 像素内且水平重叠 → 吸附。
+   * edge: 'bottom' → 插到该块之后（下方拼接）；'top' → 插到该块之前（上方接入）。 */
   function findSnapTarget(x, y) {
     var best = null, bestDist = SNAP_DIST;
     rootBlockEls && Object.keys(rootBlockEls).forEach(function (uid) {
@@ -436,14 +438,18 @@
       if (!el || !el.getBoundingClientRect) return;
       var r = el.getBoundingClientRect();
       var inX = x >= r.left - 8 && x <= r.right + 8;
-      var d = Math.abs(y - r.bottom);
-      if (inX && d < bestDist) { bestDist = d; best = { uid: uid, x: r.left, y: r.bottom }; }
+      if (!inX) return;
+      var dB = Math.abs(y - r.bottom);
+      var dT = Math.abs(y - r.top);
+      if (dB < bestDist && dB <= dT) { bestDist = dB; best = { uid: uid, x: r.left, y: r.bottom, edge: 'bottom' }; }
+      else if (dT < bestDist) { bestDist = dT; best = { uid: uid, x: r.left, y: r.top, edge: 'top' }; }
     });
     return best;
   }
 
   function handleDrop(e) {
-    if (!dragInfo) return;
+    if (!dragInfo) return null;
+    var placedUidOut = null;
     var tgt = resolveTarget(e);
     if (!tgt) { clearHint(); return; }
     e.preventDefault();
@@ -471,9 +477,12 @@
     var ins = insertionIndex(tgt.listEl, e.clientY);
     /* 顶层自由摆放：记录相对画布的像素位置，落到画布任意位置；
      * 已摆放的块再次拖动 → pos 被新位置覆盖，实现自由移动。
-     * 拖到某块底部附近 → 吸附到其正下方（对齐 x，紧贴底缘），并接入它的执行链。 */
+     * 拖到某块底缘附近 → 吸附到其正下方（下方拼接，插到它之后）；
+     * 拖到某块顶缘附近 → 向上对接（插到它之前）。 */
     var freePos = null;
     var snapIdx = -1;
+    var snapBefore = false;
+    var pendingTopSnap = null;
     if (tgt.listEl === null || tgt.listEl === rootEl) {
       var cr = rootEl.getBoundingClientRect();
       var px = Math.round(e.clientX - cr.left + (rootEl.scrollLeft || 0));
@@ -481,7 +490,16 @@
       var snap = (typeof e.clientX === 'number') ? findSnapTarget(e.clientX, e.clientY) : null;
       if (snap) {
         freePos = { x: Math.round(snap.x - cr.left + (rootEl.scrollLeft || 0)), y: Math.round(snap.y - cr.top + (rootEl.scrollTop || 0)) };
-        snapIdx = indexOfUid(state.root, snap.uid); // 插到吸附块之后
+        snapIdx = indexOfUid(state.root, snap.uid); // 底缘：插到吸附块之后；顶缘：插到它之前
+        snapBefore = snap.edge === 'top';
+        if (snapBefore) {
+          /* 顶缘吸附：新块底部贴住目标块顶部（按被拖积木实际高度上移），
+           * 避免压在目标块上（看起来在下方） */
+          var dragEl0 = !dragInfo.fromPalette && rootBlockEls && rootBlockEls[dragInfo.uid];
+          var dragH = (dragEl0 && dragEl0.getBoundingClientRect) ? dragEl0.getBoundingClientRect().height : 34;
+          if (isFinite(dragH) && dragH > 0) freePos.y = Math.max(0, freePos.y - Math.round(dragH));
+          else pendingTopSnap = snap; // 高度未知（面板拖出）：渲染后修正
+        }
       } else if (isFinite(px) && isFinite(py)) {
         freePos = { x: px, y: py };
       }
@@ -490,6 +508,7 @@
       var nb = newBlock(dragInfo.op);
       if (freePos) nb.pos = freePos;
       tgt.arr.splice(snapIdx >= 0 ? snapIdx + 1 : ins.idx, 0, nb);
+      placedUidOut = nb.uid;
     } else {
       var entry2 = registry[dragInfo.uid];
       var b = entry2.block;
@@ -510,15 +529,61 @@
         }
       }
       detach(entry2);
-      var idx = snapIdx >= 0 ? snapIdx + 1 : ins.idx;
-      if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < idx) idx -= 1;
-      if (freePos) b.pos = freePos;
-      else delete b.pos;
-      tgt.arr.splice(idx, 0, b);
+      /* 统一索引修正：refIdx 是移除前坐标系里的插入点，
+       * 统计「移除点在 refIdx 之前」的数量后一次修正，避免多重修正叠加错位 */
+      var refIdx = snapIdx >= 0 ? (snapBefore ? snapIdx : snapIdx + 1) : ins.idx;
+      var removedBefore = 0;
+      if (oldArr === tgt.arr && oldIdx >= 0 && oldIdx < refIdx) removedBefore++;
+      var groupRest = (dragInfo.group || []).filter(function (g) { return g.uid !== b.uid; });
+      groupRest.forEach(function (g) {
+        var ge = registry[g.uid];
+        if (!ge || !ge.block) return;
+        var l = ge.container && ge.container.kind === 'list' ? ge.container.list : null;
+        if (!l) return;
+        var oi = l.indexOf(ge.block);
+        if (oi < 0) return;
+        l.splice(oi, 1);
+        if (l === tgt.arr && oi < refIdx) removedBefore++;
+        if (freePos) ge.block.pos = { x: freePos.x + g.dx, y: freePos.y + g.dy };
+      });
+      var idx = refIdx - removedBefore;
+      if (freePos) {
+        b.pos = freePos;
+        /* 先插首块，再按原相对顺序插组内块，保持组相邻与执行链顺序 */
+        tgt.arr.splice(idx, 0, b);
+        groupRest.forEach(function (g, gi) {
+          var ge = registry[g.uid];
+          if (!ge || !ge.block) return;
+          tgt.arr.splice(idx + 1 + gi, 0, ge.block);
+        });
+      } else {
+        delete b.pos;
+        tgt.arr.splice(idx, 0, b);
+      }
+      placedUidOut = b.uid;
     }
     refreshVarList();
     renderRoot();
+    /* 顶缘吸附块高修正（仅面板拖出、高度未知的情形）：渲染后按实际块高重设 y */
+    if (pendingTopSnap && placedUidOut && dragInfo && dragInfo.fromPalette) {
+      var pe = rootBlockEls && rootBlockEls[placedUidOut];
+      var te = rootBlockEls && rootBlockEls[pendingTopSnap.uid];
+      if (pe && pe.getBoundingClientRect && te && te.getBoundingClientRect) {
+        var pr = pe.getBoundingClientRect();
+        var tr = te.getBoundingClientRect();
+        var cr2 = rootEl.getBoundingClientRect();
+        var pb = registry && registry[placedUidOut] && registry[placedUidOut].block;
+        if (pb && isFinite(pr.height) && pr.height > 0) {
+          pb.pos = {
+            x: Math.round(tr.left - cr2.left + (rootEl.scrollLeft || 0)),
+            y: Math.round(tr.top - pr.height - cr2.top + (rootEl.scrollTop || 0))
+          };
+          renderRoot();
+        }
+      }
+    }
     finishDrag();
+    return placedUidOut;
   }
 
   function inListSubtree(block, arr) {
@@ -539,10 +604,35 @@
     if (!el || !rootEl.contains(el)) return;
     var entry = registry[el.dataset.uid];
     if (!entry) return;
-    dragInfo = { fromPalette: false, uid: entry.block.uid };
+    dragInfo = { fromPalette: false, uid: entry.block.uid, group: computeDragGroup(entry.block) };
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', entry.block.uid);
     document.body.classList.add('dragging');
+  }
+
+  /* 整体联动拖拽：拖拽某块时，其下方串联绑定（吸附对齐）的相连积木作为整体同步移动。
+   * 判定：按空间链跟随——从首块 pos 出发，反复找 x 对齐且 y 紧邻其下的下一块
+   * （不要求 root 数组相邻，中间可隔着其他位置的块），构成保持相对位置的组。 */
+  function computeDragGroup(head) {
+    if (!head.pos) return [{ uid: head.uid, dx: 0, dy: 0 }];
+    var group = [{ uid: head.uid, dx: 0, dy: 0 }];
+    var taken = {};
+    taken[head.uid] = 1;
+    var prev = head.pos;
+    for (;;) {
+      var next = null, nextDist = 400; // y 间隙上限：吸附拼接的块紧贴，留余量容纳高块
+      state.root.forEach(function (n) {
+        if (!n.pos || taken[n.uid]) return;
+        if (Math.abs(n.pos.x - prev.x) > 1 || n.pos.y <= prev.y) return;
+        var gap = n.pos.y - prev.y;
+        if (gap < nextDist) { nextDist = gap; next = n; }
+      });
+      if (!next) break;
+      taken[next.uid] = 1;
+      group.push({ uid: next.uid, dx: next.pos.x - head.pos.x, dy: next.pos.y - head.pos.y });
+      prev = next.pos;
+    }
+    return group;
   }
 
   function paletteDragStart(e, op) {
@@ -593,6 +683,101 @@
     dragInfo = null;
     document.body.classList.remove('dragging');
     clearHint();
+    hideSnapRing();
+  }
+
+  /* ---------- 积木放置动效 ----------
+   * 拖拽倾斜、跟随指针的吸附光圈、落下回弹、落点光环/波纹、连接反馈、确认浮层。
+   * 只动 transform/opacity/box-shadow，60fps；prefers-reduced-motion 下全量降级。
+   */
+  var ringEl = null;
+
+  function ensureRing() {
+    if (ringEl || typeof document.createElement !== 'function') return ringEl;
+    ringEl = document.createElement('div');
+    ringEl.id = 'snap-ring';
+    if (document.body && document.body.appendChild) document.body.appendChild(ringEl);
+    return ringEl;
+  }
+
+  function moveRing(x, y) {
+    var r = ensureRing();
+    if (!r || !r.style) return;
+    r.style.left = x + 'px';
+    r.style.top = y + 'px';
+    if (r._classes) r._classes.add('on');
+  }
+
+  function setRingHot(hot) {
+    var r = ensureRing();
+    if (!r || !r._classes) return;
+    if (hot) r._classes.add('hot'); else r._classes.delete('hot');
+  }
+
+  function hideSnapRing() {
+    if (!ringEl || !ringEl._classes) return;
+    ringEl._classes.delete('on');
+    ringEl._classes.delete('hot');
+  }
+
+  /* 拖拽经过时：积木轻微倾斜 + 光圈跟随指针；靠近吸附目标时光圈变蓝变大 */
+  function handleDragMove(e) {
+    if (!dragInfo || typeof e.clientX !== 'number') return;
+    moveRing(e.clientX, e.clientY);
+    var near = (typeof findSnapTarget === 'function') ? findSnapTarget(e.clientX, e.clientY) : null;
+    setRingHot(!!near);
+    var dragged = dragInfo.fromPalette ? null : (registry[dragInfo.uid] && registry[dragInfo.uid].el);
+    if (dragged && dragged._classes && !dragged._classes.has('drag-tilt')) dragged._classes.add('drag-tilt');
+  }
+
+  function clearDragVisuals(draggedEl) {
+    if (draggedEl && draggedEl._classes) draggedEl._classes.delete('drag-tilt');
+    hideSnapRing();
+  }
+
+  /* 放置瞬间：下沉回弹 + 落点光环/波纹 + 绿色确认光晕 + 轻量文字浮层；
+   * 浮层出现在接缝侧边（积木右侧），不与积木重合；
+   * 连接到已有积木时槽位/列表额外闪蓝色连线光效。 */
+  function playPlaceEffects(el, x, y, note, connectedTarget) {
+    if (!el || typeof document.createElement !== 'function') return;
+    if (el._classes) {
+      el._classes.add('drop-land');
+      setTimeout(function () { if (el._classes) el._classes.delete('drop-land'); }, 900);
+    }
+    var canvasRect = rootEl && rootEl.getBoundingClientRect ? rootEl.getBoundingClientRect() : { left: 0, top: 0 };
+    var elRect = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: x, top: y, right: x, height: 0 };
+    var ctRect = connectedTarget && connectedTarget.getBoundingClientRect ? connectedTarget.getBoundingClientRect() : null;
+    /* 浮层锚定在接缝右侧：接缝=固定积木与被移动积木的连接线。
+     * x=接缝处积木右缘 + 12px，y=接缝线（固定块与被移动块的交界）。 */
+    var anchorRect = ctRect || elRect;
+    var nx = (anchorRect.right || x) - canvasRect.left + 12;
+    var seamY = ctRect && elRect
+      ? (elRect.top < ctRect.top ? ctRect.top : ctRect.bottom) // 上方接入→接缝=固定块顶缘；下方拼接→固定块底缘
+      : ((elRect.top || y) + (elRect.height || 0) / 2);
+    var ny = seamY - canvasRect.top;
+    var lx = x - canvasRect.left, ly = y - canvasRect.top;
+    if (rootEl && rootEl.appendChild) {
+      var ripple = document.createElement('div');
+      ripple.className = 'drop-ripple';
+      ripple.style.left = lx + 'px';
+      ripple.style.top = ly + 'px';
+      rootEl.appendChild(ripple);
+      setTimeout(function () { if (ripple.parentNode && ripple.parentNode.removeChild) ripple.parentNode.removeChild(ripple); }, 700);
+    }
+    if (note) {
+      var n = document.createElement('div');
+      n.className = 'place-note';
+      n.textContent = note;
+      if (connectedTarget && n.setAttribute) n.setAttribute('data-type', 'connected');
+      n.style.left = nx + 'px';
+      n.style.top = ny + 'px';
+      if (rootEl && rootEl.appendChild) rootEl.appendChild(n);
+      setTimeout(function () { if (n.parentNode && n.parentNode.removeChild) n.parentNode.removeChild(n); }, 950);
+    }
+    if (connectedTarget && connectedTarget._classes) {
+      connectedTarget._classes.add('connect-flash');
+      setTimeout(function () { if (connectedTarget._classes) connectedTarget._classes.delete('connect-flash'); }, 600);
+    }
   }
 
   /* ---------- 导入 / 导出辅助 ---------- */
@@ -828,6 +1013,7 @@
     document.addEventListener('dragstart', handleDragStart);
     document.addEventListener('dragover', function (e) {
       if (!dragInfo) return;
+      handleDragMove(e); // 光圈跟随指针 + 拖拽倾斜 + 预吸附状态
       if (rootEl.contains(e.target) || e.target === rootEl) handleDragOver(e);
       else if (!dragInfo.fromPalette && isOverPalette(e)) {
         /* 拖到工具箱上方：允许 drop，高亮提示删除 */
@@ -848,7 +1034,21 @@
         return;
       }
       if (!rootEl.contains(e.target) && e.target !== rootEl) { e.preventDefault(); finishDrag(); return; }
-      handleDrop(e);
+      /* 记录释放坐标，供放置动效（回弹/光环/浮层）定位 */
+      var dropX = e.clientX, dropY = e.clientY;
+      var snapUid = null;
+      if (typeof findSnapTarget === 'function') {
+        var st = findSnapTarget(dropX, dropY);
+        if (st) snapUid = st.uid;
+      }
+      var placedUid = handleDrop(e);
+      /* 放置完成：找到新位置的元素，播放动效 */
+      var placedEl = (placedUid && rootBlockEls[placedUid]) ? rootBlockEls[placedUid] : null;
+      if (placedEl) {
+        var connected = null;
+        if (snapUid && snapUid !== placedUid && rootBlockEls[snapUid]) connected = rootBlockEls[snapUid];
+        playPlaceEffects(placedEl, dropX, dropY, connected ? '已连接' : '已放置', connected);
+      }
     });
     document.addEventListener('dragend', finishDrag);
 

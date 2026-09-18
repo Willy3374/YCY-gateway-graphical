@@ -83,7 +83,7 @@ check('全部 41 个 opcode 可达', allOps.length, GP.DEFS.length);
 check('无重复', new Set(allOps).size, allOps.length);
 check('覆盖全部定义', GP.DEFS.every((d) => allOps.indexOf(d.op) >= 0), true);
 const perPage = pages.children.map(pageBlocks).map((a) => a.length);
-check('各页数量', perPage, [2, 7, 10, 14, 8]);
+check('各页数量', perPage, [2, 7, 10, 14, 15]);
 
 /* ---------- 3. 默认显示「事件」页，其他页隐藏 ---------- */
 function visiblePages() {
