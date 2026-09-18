@@ -880,10 +880,10 @@ body { animation: page-in 600ms ease-out both; }
   100% { box-shadow: 0 0 0 10px rgba(255, 159, 67, 0); }
 }
 @keyframes place-note {
-  0% { opacity: 0; transform: translate(-50%, -140%) translateY(4px); }
-  20% { opacity: 1; transform: translate(-50%, -140%) translateY(0); }
-  75% { opacity: 1; transform: translate(-50%, -140%) translateY(0); }
-  100% { opacity: 0; transform: translate(-50%, -140%) translateY(-8px); }
+  0% { opacity: 0; transform: translate(0, -50%) translateY(4px); }
+  20% { opacity: 1; transform: translate(0, -50%) translateY(0); }
+  75% { opacity: 1; transform: translate(0, -50%) translateY(0); }
+  100% { opacity: 0; transform: translate(0, -50%) translateY(-8px); }
 }
 
 /* 1. 拖拽态：积木轻微旋转 + 拖影感（半透明）+ 阴影变大模糊 */
@@ -936,7 +936,7 @@ body.dragging .palette-blk { opacity: .45; }
   text-shadow: 0 1px 0 rgba(255, 255, 255, .65);
   pointer-events: none;
   z-index: 60;
-  transform: translate(-50%, -140%);
+  transform: translate(0, -50%); /* 锚点=接缝右侧：向右展开，垂直居中，不与积木重合 */
   animation: place-note 900ms ease-out both;
   white-space: nowrap;
 }
